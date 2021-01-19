@@ -124,13 +124,16 @@ class DataProcessor(object):
                 lines.append(line)
         return lines
 
-
+"""
+处理数据的主要的类
+"""
 class NerProcessor(DataProcessor):
     """Processor for the CoNLL-2003 data set."""
 
     def get_train_examples(self, data_dir):
         """See base class."""
         return self._create_examples(
+            # 使用继承父类的读取文件的方法
             self._read_csv(os.path.join(data_dir, "train.txt")), "train")
     
     def get_dev_examples(self, data_dir):
@@ -145,6 +148,7 @@ class NerProcessor(DataProcessor):
     
     def get_labels(self):
         #return ["O", "B-MISC", "I-MISC",  "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "X", "[CLS]", "[SEP]"]
+        #这个具体的各个格式有什么含义？ => 类似于ner中的任务，做一个标记而已
         return ["O", "P", "X", "[CLS]", "[SEP]"]
 
     def _create_examples(self,lines,set_type):
@@ -185,6 +189,7 @@ class ScProcessor(DataProcessor):
             examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, prons=prons, label=label))
         return examples   
 
+# 字典里面放实例
 processors = {"ner":NerProcessor,
               "sc":ScProcessor}
 

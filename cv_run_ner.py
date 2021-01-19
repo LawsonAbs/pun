@@ -1,5 +1,6 @@
 from __future__ import absolute_import, division, print_function
 
+import shutil # 删除文件夹
 import argparse
 import csv
 import logging
@@ -152,7 +153,7 @@ def main():
     else: 
         mark = "hete-"
 
-
+    
     score_file = "scores/"+ mark + '/'
     if not os.path.isdir(score_file): os.mkdir(score_file)
     args.output_dir = score_file + args.output_dir
@@ -183,15 +184,18 @@ def main():
         raise ValueError("At least one of `do_train` or `do_eval` must be True.")
 
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
-        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+        logger.info(f"{args.output_dir} already exists. It will be deleted...")
+        shutil.rmtree(args.output_dir) # 如果 
+        #raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
     if not os.path.exists(args.output_dir):
         os.makedirs(args.output_dir)
     
     task_name = args.task_name.lower()
-
+    ''' 这个processors 应该是对数据集进行指定格式的处理
+    '''
     if task_name not in processors:
         raise ValueError("Task not found: %s" % (task_name))
-
+    
     processor = processors[task_name]()
     label_list = processor.get_labels()
     num_labels = len(label_list) + 1
@@ -205,14 +209,11 @@ def main():
     all_examples = np.array(all_examples)
 
     kf = KFold(n_splits=10)
-    kf.get_n_splits(all_examples)
+    kf.get_n_splits(all_examples) # ？？？ 这个功能是？
 
-    cv_index = -1
-
+    cv_index = -1  # 什么含义？
     for train_index, test_index in kf.split(all_examples):
-
         cv_index += 1
-
         train_examples = list(all_examples[train_index])
         eval_examples = list(all_examples[test_index])
 
@@ -296,7 +297,7 @@ def main():
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
-        logger.info("  Num steps = %d", num_train_optimization_steps)
+        logger.info("  Num steps = %d", num_train_optimization_steps) # 为什么这里把数字全部都提取出来了？ =>  使用TensorDataset 方便封装
         all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
         all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
         all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
@@ -305,7 +306,7 @@ def main():
         all_prons_att_mask = torch.tensor([f.prons_att_mask for f in train_features], dtype=torch.long)
         train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_prons_ids, all_prons_att_mask)
 
-
+        # 这个采样器需要学习一下
         if args.local_rank == -1:
             train_sampler = RandomSampler(train_data)
         else:
@@ -313,7 +314,7 @@ def main():
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
 
         # build test set
-        logger.info("***** Running evaluation *****") 
+        logger.info("***** Running evaluation *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
         all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
@@ -326,7 +327,7 @@ def main():
         # Run prediction for full data
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
-
+        # 总结一下： 不同的train ,eval 步骤都是需要不同的TensoDataset 和 Dataloader 
         model.train()
         best_score = 0
         label_map = {i : label for i, label in enumerate(label_list,1)}
@@ -343,6 +344,7 @@ def main():
                 input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask = batch
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
                 if not args.do_pron: prons_emb = None
+                # 开始执行 model，用于训练
                 loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
@@ -357,7 +359,7 @@ def main():
                 tr_loss += loss.item()
                 nb_tr_examples += input_ids.size(0)
                 nb_tr_steps += 1
-                if (step + 1) % args.gradient_accumulation_steps == 0:
+                if (step + 1) % args.gradient_accumulation_steps == 0:  # 这里竟然还设置了一个对梯度累积更新的步骤
                     optimizer.step()
                     optimizer.zero_grad()
                     global_step += 1
@@ -366,7 +368,7 @@ def main():
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()
                 input_mask = input_mask.to('cpu').numpy()
-                for i,mask in enumerate(input_mask):
+                for i,mask in enumerate(input_mask): #有什么作用？主要是看是不是一句话，然后将其赋值为 X
                     temp_1 =  []
                     temp_2 = []
                     for j,m in enumerate(mask):
@@ -436,7 +438,6 @@ def main():
                 best_score = f1_new
                 write_scores(score_file + 'true_'+str(cv_index), y_true)
                 write_scores(score_file + 'pred_'+str(cv_index), y_pred)
-
             
         # save a trained model and the associated configuration
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
@@ -453,6 +454,7 @@ def main():
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
+        # 这是读取事先分好的文件作为 dev 数据
         eval_examples = processor.get_dev_examples(args.data_dir)
         eval_features, prons_map = convert_examples_to_pron_features(
             eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)

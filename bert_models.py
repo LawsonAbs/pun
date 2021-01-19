@@ -1196,19 +1196,24 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.apply(self.init_bert_weights)
 
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None):
-        
+        # 估计作者是不想单搞个文件，所以这里就把这个模型类直接放到了当前这个文件中
+        # step1. 执行bert得到输出
         sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         # sequence_output: (batch_size, sequence_length, config.hidden_size)
 
-        if prons is not None:
-            
+
+        if prons is not None:            
             context = prons.view(-1, self.length_p, self.hidden_size)
+            # 可以看到这里是用attention  得到最后的 pron embedding 
             pron_output, attention_scores = self.attention(context,self.att_vec) # local attention mechanism
             pron_output = pron_output.view(-1, self.length_s, self.hidden_size)
-            attention_scores = attention_scores.view(-1, self.length_s, self.length_p)
             # pron_output: (batch_size, sequence_length, self.hidden_size)
+        
+            attention_scores = attention_scores.view(-1, self.length_s, self.length_p)
+            
+            # 将bert的输出和 训练得到的 pronunciation embedding 拼接在一起
             sequence_output = torch.cat((sequence_output,pron_output),2)
-
+        
         sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
 

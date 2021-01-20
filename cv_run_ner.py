@@ -26,7 +26,7 @@ from tqdm import tqdm, trange
 from bert_utils import *
 from sklearn.model_selection import KFold
 from seqeval.metrics import classification_report, f1_score, recall_score, precision_score
-
+# 直接使用 seqeval 来评测
 
 
 def main():
@@ -197,8 +197,8 @@ def main():
         raise ValueError("Task not found: %s" % (task_name))
     
     processor = processors[task_name]()
-    label_list = processor.get_labels()
-    num_labels = len(label_list) + 1
+    label_list = processor.get_labels() # ["O", "P", "X", "[CLS]", "[SEP]"]
+    num_labels = len(label_list) + 1 
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
@@ -209,13 +209,13 @@ def main():
     all_examples = np.array(all_examples)
 
     kf = KFold(n_splits=10)
-    kf.get_n_splits(all_examples) # ？？？ 这个功能是？
+    kf.get_n_splits(all_examples) # ？？？ 这个功能是？ => 感觉像是什么都没有做
 
     cv_index = -1  # 什么含义？
     for train_index, test_index in kf.split(all_examples):
         cv_index += 1
         train_examples = list(all_examples[train_index])
-        eval_examples = list(all_examples[test_index])
+        eval_examples = list(all_examples[test_index]) # 可以直接在numpy数组中再套一个数组，然后就得到数组的值
 
         num_train_optimization_steps = int(
             len(train_examples) / args.train_batch_size / args.gradient_accumulation_steps) * args.num_train_epochs
@@ -289,7 +289,7 @@ def main():
             eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)
         prons_emb = embed_extend(prons_emb, len(prons_map))
         prons_emb = torch.tensor(prons_emb, dtype=torch.float)
-
+        # 创建一个 Embedding 实例
         prons_embedding = torch.nn.Embedding.from_pretrained(prons_emb)
         prons_embedding.weight.requires_grad=False
 
@@ -335,7 +335,7 @@ def main():
         # start cross-validation training
         logger.info("cv: {}".format(cv_index))
         for index in trange(int(args.num_train_epochs), desc="Epoch"):
-            tr_loss = 0
+            tr_loss = 0  # train loss
             nb_tr_examples, nb_tr_steps = 0, 0
             y_true, y_pred = [], []
 
@@ -368,7 +368,7 @@ def main():
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()
                 input_mask = input_mask.to('cpu').numpy()
-                for i,mask in enumerate(input_mask): #有什么作用？主要是看是不是一句话，然后将其赋值为 X
+                for i,mask in enumerate(input_mask): #有什么作用？主要是看是不是一句话
                     temp_1 =  []
                     temp_2 = []
                     for j,m in enumerate(mask):

@@ -151,6 +151,7 @@ class NerProcessor(DataProcessor):
         #这个具体的各个格式有什么含义？ => 类似于ner中的任务，做一个标记而已
         return ["O", "P", "X", "[CLS]", "[SEP]"]
 
+    # 创建一个训练样本
     def _create_examples(self,lines,set_type):
         examples = []
         for i,(sentence,label,prons) in enumerate(lines):
@@ -258,10 +259,10 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
                               segment_ids=segment_ids,
                               label_id=label_ids))
     return features
-
+# max_pron_length 表示的是发音的最长字段，如果超过了，就需要截断| 这里是对所有的文本数据使用bert进行处理 然后组成一批
 def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map):
     """Loads a data file into a list of `InputBatch`s."""
-
+    # 根据传入的label_list 生成了一个 label_map，也就是个字典
     label_map = {label : i for i, label in enumerate(label_list,1)}
     
     features = []
@@ -274,7 +275,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
         prons = []
         prons_mask = []
         for i, word in enumerate(textlist):
-            token = tokenizer.tokenize(word)
+            token = tokenizer.tokenize(word) # 处理该词，如果改词找不到，则分块处理。
             tokens.extend(token)
             label_1 = labellist[i]
             pron_1 = pronslist[i] # the complete prons of a word
@@ -284,8 +285,8 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
                 if pron_1[j] not in prons_map:
                     prons_map[pron_1[j]] = index + 1
                 pron_2.append(prons_map[pron_1[j]])
-            pron_mask_2 = [1] * len(pron_2)
-
+            pron_mask_2 = [1] * len(pron_2) # 这个mask_2 的用处？
+            # 对发音的字符做一个截断或者pad操作
             if len(pron_2) >= max_pron_length: 
                 pron_2 = pron_2[0:max_pron_length] # trunk it if too long
                 pron_mask_2 = pron_mask_2[0:max_pron_length]
@@ -297,11 +298,11 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
                     labels.append(label_1)
                     prons.append(pron_2) # only send the prons to the first piece_token of a word
                     prons_mask.append(pron_mask_2)
-                else:
+                else:  # 如果一个单词被 tokenize 成了两段，就会进入到这个else中。就会被标志为一个X 
                     labels.append("X")
                     prons.append([0] * max_pron_length) # pad other piece_token with 0's
                     prons_mask.append([0] * max_pron_length)
-        if len(tokens) >= max_seq_length - 1:
+        if len(tokens) >= max_seq_length - 1:  # 判断最后的sequence是否超过了最大长度 
             tokens = tokens[0:(max_seq_length - 2)]
             labels = labels[0:(max_seq_length - 2)]
             prons = prons[0:(max_seq_length - 2)]
@@ -330,7 +331,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
         prons_att_mask.append([0] * max_pron_length)
         input_ids = tokenizer.convert_tokens_to_ids(ntokens)
         input_mask = [1] * len(input_ids)
-        while len(input_ids) < max_seq_length:
+        while len(input_ids) < max_seq_length: 
             input_ids.append(0)
             input_mask.append(0)
             segment_ids.append(0)
@@ -471,12 +472,12 @@ def convert_examples_to_pron_SC_features(examples, label_list, max_seq_length, m
 
 
 
-def embed_load(file_input):
+def embed_load(file_input): # ./data/pron.16.vec  代表的是16维的发音embedding
 
     f = open(file_input, 'r')
     line = f.readline()
     pron_map = {}
-    num,dim = line.rstrip().split(' ')
+    num,dim = line.rstrip().split(' ')# 拿到embedding 的数目和维度
     line = f.readline()
     embeddings = [[0.0]*int(dim)]
     while line != '':
@@ -485,7 +486,7 @@ def embed_load(file_input):
         emb = vec[1:]
         if token not in pron_map: 
             pron_map[token] = len(pron_map) + 1
-            embeddings.append([float(x) for x in emb])
+            embeddings.append([float(x) for x in emb])  # 从str 转成float 型
     
         line = f.readline()
 

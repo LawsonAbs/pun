@@ -17,6 +17,7 @@
 
 from __future__ import absolute_import, division, print_function, unicode_literals
 
+import random
 import copy
 import json
 import logging
@@ -30,8 +31,9 @@ from io import open
 #from bert_utils import *
 
 import torch
-from torch import nn
+from torch import cosine_similarity, nn
 from torch.nn import CrossEntropyLoss
+import torch.nn.functional as F
 from attention import Attention
 from local_attention import Local_attention
 from torch.nn.parameter import Parameter
@@ -581,7 +583,7 @@ class BertPreTrainedModel(nn.Module):
         # Load config
         config_file = os.path.join(serialization_dir, CONFIG_NAME)
         config = BertConfig.from_json_file(config_file)
-        logger.info("Model config {}".format(config))
+        logger.info("Model config {}".format(config))  # 输出bert模型的配置信息
         # Instantiate model.
         model = cls(config, *inputs, **kwargs)
         if state_dict is None and not from_tf:
@@ -1188,32 +1190,94 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             self.classifier = nn.Linear(config.hidden_size + self.hidden_size, num_labels) 
         else:
             self.classifier = nn.Linear(config.hidden_size, num_labels) 
-        self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, device=device, requires_grad=True))
+        
+        # 下面这个应该就是attention 中随机初始化的参数
+        self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, device=device, requires_grad=True)) # 给 pronunciation 做attention 的操作
+        self.att_sense = Parameter(torch.rand(768 * 2, 1, device=device, requires_grad=True)) # 给sense 做attention的操作
         self.attention = Local_attention(self.hidden_size)
         self.length_s = max_seq_length
         self.length_p = max_prons_length
         self.emb_p = pron_emb_size
         self.apply(self.init_bert_weights)
 
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None):
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,use_sense=None):
         # 估计作者是不想单搞个文件，所以这里就把这个模型类直接放到了当前这个文件中
         # step1. 执行bert得到输出
         sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         # sequence_output: (batch_size, sequence_length, config.hidden_size)
-
-
-        if prons is not None:            
-            context = prons.view(-1, self.length_p, self.hidden_size)
-            # 可以看到这里是用attention  得到最后的 pron embedding 
+        
+        # prons:[batch_size,max_seq_length,pron_seq_length,pro_emb_size]
+        if prons is not None:
+            context = prons.view(-1, self.length_p, self.hidden_size)  # prons:[batch_size*max_seq_length,pron_seq_length,pro_emb_size]
+            # 为什么变化维度？
+            # 可以看到这里是用attention  得到最后的 pron embedding.  context size = [4096, 5, 16]
             pron_output, attention_scores = self.attention(context,self.att_vec) # local attention mechanism
             pron_output = pron_output.view(-1, self.length_s, self.hidden_size)
             # pron_output: (batch_size, sequence_length, self.hidden_size)
         
             attention_scores = attention_scores.view(-1, self.length_s, self.length_p)
             
-            # 将bert的输出和 训练得到的 pronunciation embedding 拼接在一起
+            # 将bert的输出和 训练得到的 pronunciation embedding 的attention 结果拼接在一起
             sequence_output = torch.cat((sequence_output,pron_output),2)
         
+        # 如果使用 top-k 个sense （所以就必须要知道bert得到的embedding，否则无法做相似），并将其作为一部分数据使用
+        # 对于没有top-k sense 的词，那么就初始化为0
+        black_list = ['is']
+        if use_sense is not None:
+            from transformers import BertModel,BertTokenizer
+            from nltk.corpus import wordnet as wn
+            path = "/home/lawson/pretrain/bert-base-cased"
+            tokenizer = BertTokenizer.from_pretrained(path) # 加载模型
+            model = BertModel.from_pretrained(path) # 加载模型
+            batch_size,max_seq_length = input_ids.size()  # 得到各个值
+            # 先将 input_ids 转成tokens
+            input_ids = input_ids.tolist() # 先转为list
+            zero = torch.zeros(10,768)  # 以 0 向量填充，备用
+            # size = [batch_size, sequence_length]
+            for input in input_ids: # 因为有很多句话，所以这里遍历其中的每一个双关语                
+                words = tokenizer.convert_ids_to_tokens(input) # 一次可以转换一句话
+                defi_emb = zero #   [CLS] 对应的就是这个zero
+                for word in words[1:-1]: # 将得到的token_id 转为token； 第一个 CLS 就不判断了
+                    # 使用 wordnet 计算其sense 列表
+                    word = word.lower() # 转为小写
+                    syn = wn.synsets(word) # 获取word的含义集
+                    if word not in black_list and len(syn)>0:
+                        sense_list = []
+                        for sense in syn:
+                            gross = sense.definition() # 获取定义
+                            sense_list.append(gross) # 追加到定义集合中
+                    
+                        # 10 这个参数的设置还是需要衡量一下
+                        # 如果单词的 sense list 不足10个，那么就padding 到10个
+                        while(len(sense_list)<10):
+                            sense_list.append("")
+                        # 考虑随机删除某个下标是否会导致后续的出现问题
+                        # 如果单词的 sense list 超过10个，那么就随机 truncate 到10个 
+                        while(len(sense_list)>10):
+                            index = random.random() # 生成一个随机数
+                            index = int(index * len(sense_list)) # 确定下标
+                            del(sense_list[index]) # 删除下标为 index 的值
+
+                        # 下面使用 bert 得到这个单词所有的 sense_list 的向量
+                        senses_input_ids = tokenizer(sense_list,padding='max_length',max_length=50,return_tensors="pt")
+                        senses_output = model(**senses_input_ids)
+                        last_layer,other = senses_output
+                        last_cls_emb = last_layer[:,0,:]  # 取任何一句话中的 CLS 向量
+                        # 得到某个单词所有含义的 embdding 
+                        last_cls_emb =  last_cls_emb.squeeze_(1) # 得到一个二维向量                                
+                        # 拼接得到所有的结果向量
+                        defi_emb = torch.cat((defi_emb,last_cls_emb),0) # 在最后一个维度上拼接即可
+                    else:  # 直接填充0                        
+                        defi_emb = torch.cat((defi_emb,zero),0) # 在最后一个维度上拼接即可
+               
+                       
+            # 使用attention 处理这个last_cls_emb
+            sense_out = self.attention(defi_emb,self.att_sense)
+            
+            # 使用cosine 函数计算其 top-k 个相似的embedding
+            # 直接将sense的embedding 拼接到每个单词的embedding 后面
+            sequence_output = sequence_output.cat((sequence_output,sense_out),2)
+            
         sequence_output = self.dropout(sequence_output)
         logits = self.classifier(sequence_output)
 
@@ -1223,8 +1287,8 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             if attention_mask is not None:
                 active_loss = attention_mask.view(-1) == 1
                 active_logits = logits.view(-1, self.num_labels)[active_loss]
-                active_labels = labels.view(-1)[active_loss]
-                loss = loss_fct(active_logits, active_labels)
+                active_labels = labels.view(-1)[active_loss] 
+                loss = loss_fct(active_logits, active_labels) 
             else:
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             return loss,logits

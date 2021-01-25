@@ -259,7 +259,9 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
                               segment_ids=segment_ids,
                               label_id=label_ids))
     return features
-# max_pron_length 表示的是发音的最长字段，如果超过了，就需要截断| 这里是对所有的文本数据使用bert进行处理 然后组成一批
+
+# max_pron_length 表示的是发音的最长字段，如果超过了，就需要截断
+# 这里是对所有的文本数据使用bert进行处理 然后组成一批
 def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map):
     """Loads a data file into a list of `InputBatch`s."""
     # 根据传入的label_list 生成了一个 label_map，也就是个字典
@@ -272,7 +274,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
         pronslist = example.prons
         tokens = []
         labels = []
-        prons = []
+        prons = [] # 是个[[...],[...],...] 这样的数据。因为每个单词都有好几个音节，所以就需要一段（max_pron_length）来存储
         prons_mask = []
         for i, word in enumerate(textlist):
             token = tokenizer.tokenize(word) # 处理该词，如果改词找不到，则分块处理。
@@ -296,12 +298,16 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
             for m in range(len(token)):
                 if m == 0:
                     labels.append(label_1)
+                    # 也就是说，如果这个单词被切成了多段，那么发音只会被记录到第一个token分块中，后面的都用其它的填充
                     prons.append(pron_2) # only send the prons to the first piece_token of a word
                     prons_mask.append(pron_mask_2)
                 else:  # 如果一个单词被 tokenize 成了两段，就会进入到这个else中。就会被标志为一个X 
                     labels.append("X")
                     prons.append([0] * max_pron_length) # pad other piece_token with 0's
                     prons_mask.append([0] * max_pron_length)
+            
+            # 根据token 的embedding 计算相似embedding
+            
         if len(tokens) >= max_seq_length - 1:  # 判断最后的sequence是否超过了最大长度 
             tokens = tokens[0:(max_seq_length - 2)]
             labels = labels[0:(max_seq_length - 2)]
@@ -358,7 +364,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
             logger.info("prons_att_mask: %s" % " ".join([str(x) for x in prons_att_mask]))
             logger.info("prons_map: %s" % str(prons_map))
             # logger.info("label: %s (id = %d)" % (example.label, label_ids))
-
+         
         features.append(
                 InputPronFeatures(input_ids=input_ids,
                                   input_mask=input_mask,

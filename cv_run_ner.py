@@ -3,7 +3,6 @@ from __future__ import absolute_import, division, print_function
 import shutil # 删除文件夹
 import argparse
 import csv
-import logging
 import os
 import random
 import json
@@ -58,8 +57,10 @@ def main():
                         default="",
                         type=str,
                         help="Where do you want to store the pre-trained models downloaded from s3")
+    
+    # 我将128 改为了 75。 因为调研后的数据发现最大的长度是68 + cls + sep 也就70
     parser.add_argument("--max_seq_length",
-                        default=128,
+                        default=75,  
                         type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
@@ -82,7 +83,7 @@ def main():
     2.当你为其制定一个值时，它会报错，因为它就是一个标志
     '''
     parser.add_argument("--do_train",
-                        action='store_true', # 有了action这个参数，就说明如果
+                        action='store_true',
                         help="Whether to run training.")
     parser.add_argument("--do_eval",
                         action='store_true',
@@ -90,11 +91,14 @@ def main():
     parser.add_argument("--do_pron",
                         action='store_true',
                         help='Whether to use pronunciation as features.')
+    parser.add_argument("--use_sense",
+                        action='store_true',
+                        help='Whether to use sense as features.')                        
     parser.add_argument("--do_lower_case",
                         action='store_true',
                         help="Set this flag if you are using an uncased model.")
     parser.add_argument("--train_batch_size",
-                        default=32,
+                        default=1,
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--eval_batch_size",
@@ -167,6 +171,8 @@ def main():
         n_gpu = 1
         # Initializes the distributed backend which will take care of sychronizing nodes/GPUs
         torch.distributed.init_process_group(backend='nccl')
+    
+    # 下面这个logger 是从 bert_utils 中导入的
     logger.info("device: {} n_gpu: {}, distributed training: {}, 16-bits training: {}".format(
         device, n_gpu, bool(args.local_rank != -1), args.fp16))
 
@@ -204,14 +210,31 @@ def main():
 
     train_examples = None
     num_train_optimization_steps = None
-    
+    '''
+    01.get_train_examples(args.data_dir) 这个是把 发音embedding 也写到了 data example中    
+    02. 这里的 arg.data_dir 其实是train.txt 文件。 里面每行的内容如下：
+    单词 标记 [发音向量]  => 下面给出示例    
+    ...
+    to O T,UW1
+    a O AH0
+    sting P S,T,IH1,NG
+    operation O AA2,P,ER0,EY1,SH,AH0,N
+    ? O PUNCTUATION_?
+    ...
+
+    其实这个将单词映射成发音向量的 步骤是很关键的。否则不知道怎么将向量拼接。
+    '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
 
     kf = KFold(n_splits=10)
     kf.get_n_splits(all_examples) # ？？？ 这个功能是？ => 感觉像是什么都没有做
 
-    cv_index = -1  # 什么含义？
+    
+    '''
+    下面就是使用交叉验证将所有的数据分成 train 和 test， 然后进行数据分割
+    '''
+    cv_index = -1  # 什么含义？ => cross validation index
     for train_index, test_index in kf.split(all_examples):
         cv_index += 1
         train_examples = list(all_examples[train_index])
@@ -289,15 +312,17 @@ def main():
             eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)
         prons_emb = embed_extend(prons_emb, len(prons_map))
         prons_emb = torch.tensor(prons_emb, dtype=torch.float)
-        # 创建一个 Embedding 实例
+        # 根据tensor 创建一个 Embedding 实例
         prons_embedding = torch.nn.Embedding.from_pretrained(prons_emb)
         prons_embedding.weight.requires_grad=False
 
         # build training set
-        logger.info("***** Running training *****")
+        logger.info("***** Training Parameters *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
-        logger.info("  Num steps = %d", num_train_optimization_steps) # 为什么这里把数字全部都提取出来了？ =>  使用TensorDataset 方便封装
+        logger.info("  Num steps = %d", num_train_optimization_steps)  # 对这个参数不了解
+        
+        # 为什么这里把数字全部都提取出来了？ =>  使用TensorDataset 方便封装
         all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
         all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
         all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
@@ -314,7 +339,7 @@ def main():
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
 
         # build test set
-        logger.info("***** Running evaluation *****")
+        logger.info("***** Evaluation Parameters *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
         all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
@@ -333,19 +358,20 @@ def main():
         label_map = {i : label for i, label in enumerate(label_list,1)}
 
         # start cross-validation training
+        # 一共有
         logger.info("cv: {}".format(cv_index))
-        for index in trange(int(args.num_train_epochs), desc="Epoch"):
+        for index in trange(int(args.num_train_epochs), desc="Train Epoch"):
             tr_loss = 0  # train loss
             nb_tr_examples, nb_tr_steps = 0, 0
             y_true, y_pred = [], []
-
-            for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
+            logger.info("\n\n----------------------------Start Training ----------------------------")
+            for step, batch in enumerate(tqdm(train_dataloader, desc="Train Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask = batch
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
                 if not args.do_pron: prons_emb = None
                 # 开始执行 model，用于训练
-                loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids)
+                loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids,args.use_sense)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
                 if args.gradient_accumulation_steps > 1:
@@ -388,12 +414,12 @@ def main():
                             pass
 
             report = classification_report(y_true, y_pred, digits=4)
-            logger.info("\n%s", report)
+            logger.info("\n%s", report)# 这里的换行是因为：如果不换行，就会和上面的tqdm输出混一起了。下同
             logger.info("loss: {}".format(tr_loss/nb_tr_examples))
            
             y_pred, y_true = [], []
-            logger.info("Evaluating...")
-            for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating"):
+            logger.info("\n\n----------------------------Start Evaluating----------------------------")
+            for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating Iterator"):
                 prons_emb = prons_embedding(prons_ids).to(device)
                 input_ids = input_ids.to(device)
                 input_mask = input_mask.to(device)
@@ -431,12 +457,12 @@ def main():
                             break
 
             report = classification_report(y_true, y_pred, digits=4)
-            logger.info("\n%s", report)
+            logger.info("\n%s", report)  
             f1_new = f1_score(y_true, y_pred)
            
             if f1_new  > best_score: 
                 best_score = f1_new
-                write_scores(score_file + 'true_'+str(cv_index), y_true)
+                write_scores(score_file + 'true_'+str(cv_index), y_true) # 最后得到的文件类型是 pickle 
                 write_scores(score_file + 'pred_'+str(cv_index), y_pred)
             
         # save a trained model and the associated configuration
@@ -451,10 +477,11 @@ def main():
         json.dump(model_config,open(os.path.join(args.output_dir,"model_config.json"),"w"))
         # load a trained model and config that you have fine-tuned
  
+
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        # 这是读取事先分好的文件作为 dev 数据
+        # 这是读取 valid.txt 文件作为 eval 数据
         eval_examples = processor.get_dev_examples(args.data_dir)
         eval_features, prons_map = convert_examples_to_pron_features(
             eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)

@@ -261,7 +261,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
     return features
 
 # max_pron_length 表示的是发音的最长字段，如果超过了，就需要截断
-# 这里是对所有的文本数据使用bert进行处理 然后组成一批
+# 这里是对所有的文本数据使用bert进行处理 然后组成一批输入数据
+# 我在这个文件中加入了使用sense embedding 的部分
 def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map):
     """Loads a data file into a list of `InputBatch`s."""
     # 根据传入的label_list 生成了一个 label_map，也就是个字典

@@ -1207,7 +1207,7 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.length_p = max_prons_length
         self.emb_p = pron_emb_size
         self.apply(self.init_bert_weights)        
-
+    
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,defi_emb=None):
         # 估计作者是不想单搞个文件，所以这里就把这个模型类直接放到了当前这个文件中
         # step1. 执行bert得到输出
@@ -1228,12 +1228,13 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             # 将bert的输出和 训练得到的 pronunciation embedding 的attention 结果拼接在一起
             sequence_output = torch.cat((sequence_output,pron_output),2)
         
-        # 如果使用 top-k 个sense （所以就必须要知道bert得到的embedding，否则无法做相似），并将其作为一部分数据使用
-        # 对于没有top-k sense 的词，那么就初始化为0        
-        if defi_emb is not None:                        
-            # 从cpu移到gpu            
+        # defi_emb 的size [batch_size,max_seq_length,10,768]
+        if defi_emb is not None:                      
+            # 从cpu移到gpu 
+            defi_emb = defi_emb.cuda()
+            defi_emb = defi_emb.view(-1,10,768)
             # 使用attention 处理这个last_cls_emb
-            sense_output,attention_scores_2 = self.attention_2(defi_emb,self.linear_sense)                    
+            sense_output,attention_scores_2 = self.attention_2(defi_emb,self.linear_sense)
             sense_output = sense_output.view(-1, self.length_s, self.sense_size)
             # 直接将sense的embedding 拼接到每个单词的embedding 后面
             sequence_output = torch.cat((sequence_output,sense_output),2)

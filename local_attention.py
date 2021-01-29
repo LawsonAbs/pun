@@ -1,11 +1,12 @@
 '''
 Author: LawsonAbs
 Date: 2021-01-13 20:06:46
-LastEditTime: 2021-01-26 10:58:20
+LastEditTime: 2021-01-28 15:50:48
 FilePath: /punLocation/local_attention.py
 '''
 import torch
 import torch.nn as nn
+from transformers import BertTokenizer
 
 """
 什么叫 Local_attention ？与global attention 相对的一种

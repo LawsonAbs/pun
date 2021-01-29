@@ -592,3 +592,67 @@ def visualize_self(logits, label_ids, input_ids, input_mask, att, tokenizer):
 
     return
 
+
+
+"""
+01.all_input_ids: 待转换的所有all_input_ids
+
+"""
+def getSenseEmbedding(batch_input_ids,model_dir,defi_num):
+    # ================ 主要思想： 计算每个 token 对应的sense embedding  ================
+        from transformers import BertTokenizerFast
+        from nltk.corpus import wordnet as wn            
+        sense_tokenizer = BertTokenizerFast.from_pretrained(model_dir)
+        black_list = ['is','a','be','did']
+        num,max_seq_length = batch_input_ids.size()  # 得到双关语总数、每句话最大的长度
+        batch_sense = [] # 存储所有单词的各个释义
+        # size = [1446, max_seq_length*10]
+        for input_ids in batch_input_ids: # 因为有很多句话，所以这里遍历其中的每一个双关语            
+            words = sense_tokenizer.convert_ids_to_tokens(input_ids) # 将得到的token_id 转为token，一次可以转换一句话            
+            for word in words[0:]: # 从头到尾判断一遍
+                # 使用 wordnet 计算其sense 列表
+                word = word.lower() # 转为小写
+                syn = wn.synsets(word) # 获取word的含义集
+                sense_list = [] # 当前这个单词的10种sense
+                if word not in black_list and len(syn)>0:                    
+                    for sense in syn:
+                        gross = sense.definition() # 获取定义
+                        sense_list.append(gross) # 追加到定义集合中
+                
+                # 这个参数的设置还是需要衡量一下
+                # 如果单词的 sense list 不足 defi_num 个，那么就 padding 到 defi_num 个
+                while(len(sense_list)<defi_num):
+                    sense_list.append("")
+                # 考虑随机删除某个下标是否会导致后续的出现问题
+                # 如果单词的 sense list 超过 defi_num 个，那么就随机 truncate 到 defi_num 个 
+                while(len(sense_list)>defi_num):
+                    index = random.random() # 生成一个随机数
+                    index = int(index * len(sense_list)) # 确定下标
+                    del(sense_list[index]) # 删除下标为 index 的值
+                batch_sense.append(sense_list) # 得到当前这句双关语的所有单词的senseList         
+        
+        # 处理维度
+        # defi_emb = defi_emb.view(-1,defi_num,768)
+        # defi_emb = defi_emb.cuda(device)
+        return batch_sense # 后面交给bert处理
+        # len(batch_sense) = 1446. 也就是双关语的个数
+        # len(batch_sense[0]) = max_seq_length . 也就是一句双关语的最大长度
+        # len(batch_sense[0][0] = defi_num) .也就是一个单词中取 defi_num 个释义
+
+'''
+ # 下面使用 bert 得到这个单词所有的 sense_list 的向量
+                    senses_input_ids = sense_tokenizer(sense_list,
+                                                padding='max_length',
+                                                max_length=50,
+                                                truncation=True,
+                                                return_tensors="pt")
+                    senses_output = sense_model(**senses_input_ids)
+                    last_layer,other = senses_output
+                    last_cls_emb = last_layer[:,0,:]  # 取任何一句话中的 CLS 向量
+                    # 得到某个单词所有含义的 embdding 
+                    last_cls_emb =  last_cls_emb.squeeze_(1) # 得到一个二维向量                                
+                    # 拼接得到所有的结果向量
+                    defi_emb = torch.cat((defi_emb,last_cls_emb),0) # 在最后一个维度上拼接即可
+                else:  # 直接填充0                        
+                    defi_emb = torch.cat((defi_emb,zero),0) # 在最后一个维度上拼接即可
+'''

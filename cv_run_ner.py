@@ -59,8 +59,9 @@ def main():
                         help="Where do you want to store the pre-trained models downloaded from s3")
     
     # 我将128 改为了 75。 因为调研后的数据发现最大的长度是68 + cls + sep 也就70
+    # 而且超过50 的就只有1 条，所以这里还是只用55的长度，如果超出了，则截断
     parser.add_argument("--max_seq_length",
-                        default=75,  
+                        default=55,  
                         type=int,
                         help="The maximum total input sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
@@ -98,13 +99,18 @@ def main():
                         action='store_true',
                         help="Set this flag if you are using an uncased model.")
     parser.add_argument("--train_batch_size",
-                        default=1,
+                        default=5,
                         type=int,
                         help="Total batch size for training.")
     parser.add_argument("--eval_batch_size",
-                        default=8,
+                        default=2,
                         type=int,
                         help="Total batch size for eval.")
+    parser.add_argument("--defi_num",
+                        default=5,
+                        type=int,
+                        help="The number of definition.")
+
     parser.add_argument("--learning_rate",
                         default=5e-5,
                         type=float,
@@ -235,6 +241,11 @@ def main():
     下面就是使用交叉验证将所有的数据分成 train 和 test， 然后进行数据分割
     '''
     cv_index = -1  # 什么含义？ => cross validation index
+    from transformers import BertModel
+    from transformers import AutoTokenizer # 引入一个包
+    auto_tokenizer = AutoTokenizer.from_pretrained(args.bert_model)
+    sense_bert = BertModel.from_pretrained("/home/lawson/pretrain/bert-base-cased")
+    sense_bert.to(device) # 放入到gpu中
     for train_index, test_index in kf.split(all_examples):
         cv_index += 1
         train_examples = list(all_examples[train_index])
@@ -253,8 +264,9 @@ def main():
                   max_seq_length=args.max_seq_length,
                   max_prons_length=args.max_pron_length, 
                   pron_emb_size=args.pron_emb_size,
-                  do_pron=args.do_pron)
-
+                  do_pron=args.do_pron,
+                  defi_num = args.defi_num)
+                  
         if args.fp16:
             model.half()
         model.to(device)
@@ -321,14 +333,20 @@ def main():
         logger.info("  Batch size = %d", args.train_batch_size)
         logger.info("  Num steps = %d", num_train_optimization_steps)  # 对这个参数不了解
         
-        # 为什么这里把数字全部都提取出来了？ =>  使用TensorDataset 方便封装
-        all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long)
+        # 为什么这里把数字全部都提取出来了？ =>  使用TensorDataset 方便封装 
+        all_input_ids = torch.tensor([f.input_ids for f in train_features], dtype=torch.long) # size [1446,max_seq_length]
         all_input_mask = torch.tensor([f.input_mask for f in train_features], dtype=torch.long)
         all_segment_ids = torch.tensor([f.segment_ids for f in train_features], dtype=torch.long)
         all_label_ids = torch.tensor([f.label_id for f in train_features], dtype=torch.long)
         all_prons_ids = torch.tensor([f.prons_id for f in train_features], dtype=torch.long)
         all_prons_att_mask = torch.tensor([f.prons_att_mask for f in train_features], dtype=torch.long)
-        train_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_prons_ids, all_prons_att_mask)
+        #train_all_sense = getSenseEmbedding(all_input_ids,args.bert_model) # train_sense_emb 
+        train_data = TensorDataset(all_input_ids, 
+                                    all_input_mask,
+                                    all_segment_ids,
+                                    all_label_ids,
+                                    all_prons_ids, 
+                                    all_prons_att_mask)
 
         # 这个采样器需要学习一下
         if args.local_rank == -1:
@@ -347,7 +365,16 @@ def main():
         all_label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
         all_prons_ids = torch.tensor([f.prons_id for f in eval_features], dtype=torch.long)
         all_prons_att_mask = torch.tensor([f.prons_att_mask for f in eval_features], dtype=torch.long)
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_prons_ids, all_prons_att_mask)
+        
+        # 根据 all_input_ids 变换得到 对应的 sense_embedding
+        
+        eval_data = TensorDataset(all_input_ids, 
+                                    all_input_mask,
+                                    all_segment_ids,
+                                    all_label_ids,
+                                    all_prons_ids,
+                                    all_prons_att_mask,
+                                    )
         # Run prediction for full data
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
@@ -356,12 +383,6 @@ def main():
         best_score = 0
         label_map = {i : label for i, label in enumerate(label_list,1)}
 
-        # 下面给获取 sense 使用
-        from transformers import BertModel,BertTokenizerFast
-        from nltk.corpus import wordnet as wn        
-        sense_model = BertModel.from_pretrained(args.bert_model) # 加载模型
-        sense_tokenizer = BertTokenizerFast.from_pretrained(args.bert_model)
-        black_list = ['is','a','be']
 
         # start cross-validation training
         # 一共有
@@ -374,66 +395,37 @@ def main():
             for step, batch in enumerate(tqdm(train_dataloader, desc="Train Iteration")):
                 batch = tuple(t.to(device) for t in batch)
                 input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask = batch
+                # print("\n",input_ids.size()) # torch.size[batch_size,max_seq_length]  
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
 
-
-                # 获取 sense_embedding                         
-                batch_size,max_seq_length = input_ids.size()  # 得到各个值
-                # 先将 input_ids 转成tokens
-                input_ids = input_ids.tolist() # 先转为list
-                zero = torch.zeros(10,768)  # 以 0 向量填充，备用
-                # size = [batch_size, sequence_length]
-                defi_emb = None
-                for input in input_ids: # 因为有很多句话，所以这里遍历其中的每一个双关语
-                    if defi_emb is None:
-                        defi_emb = zero
-                    else:
-                        defi_emb = torch.cat((defi_emb,zero),0)  # [CLS] 对应的就是这个zero
-                    words = sense_tokenizer.convert_ids_to_tokens(input) # 一次可以转换一句话                
-                    for word in words[1:]: # 将得到的token_id 转为token； 第一个 CLS 就不判断了
-                        # 使用 wordnet 计算其sense 列表
-                        word = word.lower() # 转为小写
-                        syn = wn.synsets(word) # 获取word的含义集
-                        if word not in black_list and len(syn)>0:
-                            sense_list = []
-                            for sense in syn:
-                                gross = sense.definition() # 获取定义
-                                sense_list.append(gross) # 追加到定义集合中
-                        
-                            # 10 这个参数的设置还是需要衡量一下
-                            # 如果单词的 sense list 不足10个，那么就 padding 到10个
-                            while(len(sense_list)<10):
-                                sense_list.append("")
-                            # 考虑随机删除某个下标是否会导致后续的出现问题
-                            # 如果单词的 sense list 超过10个，那么就随机 truncate 到10个 
-                            while(len(sense_list)>10):
-                                index = random.random() # 生成一个随机数
-                                index = int(index * len(sense_list)) # 确定下标
-                                del(sense_list[index]) # 删除下标为 index 的值
-
-                            # 下面使用 bert 得到这个单词所有的 sense_list 的向量
-                            senses_input_ids = sense_tokenizer(sense_list,
-                                                        padding='max_length',
-                                                        max_length=50,
-                                                        truncation=True,
-                                                        return_tensors="pt")
-                            senses_output = sense_model(**senses_input_ids)
-                            last_layer,other = senses_output
-                            last_cls_emb = last_layer[:,0,:]  # 取任何一句话中的 CLS 向量
-                            # 得到某个单词所有含义的 embdding 
-                            last_cls_emb =  last_cls_emb.squeeze_(1) # 得到一个二维向量                                
-                            # 拼接得到所有的结果向量
-                            defi_emb = torch.cat((defi_emb,last_cls_emb),0) # 在最后一个维度上拼接即可
-                        else:  # 直接填充0                        
-                            defi_emb = torch.cat((defi_emb,zero),0) # 在最后一个维度上拼接即可
+                # 使用bert 处理，获取其CLS位置的向量
+                # 在这里使用model批量处理 sense，然后得到embedding
+                train_all_sense = getSenseEmbedding(input_ids,args.bert_model,args.defi_num)
+                defi_emb = []
+                all_sense = []
+                for senses in train_all_sense:
+                    for sense in senses:
+                        all_sense.append(sense)
+                # print(all_sense)  
+                inputs = auto_tokenizer(all_sense,
+                                        return_tensors='pt',
+                                        padding='max_length',
+                                        truncation=True,
+                                        max_length=30) 
+                inputs.to(device)
                 
-                # 处理维度
-                defi_emb = defi_emb.view(-1,10,768)
-                defi_emb = defi_emb.cuda(device)
-                input_ids = torch.tensor(input_ids)
-                input_ids = input_ids.cuda(device)
+                # bert处理的大小是 batch_size * max_seq_length(75) * defi_num(args.defi_num) 条句子
+                # 但是一次不能处理的太多，否则就容易出现 out of memeory 的错误
+                output = sense_bert(**inputs)
+                # last_layer,other = output
+                last_layer = output.last_hidden_state # 返回的
+                # last_layer size = [batch_size * max_seq_length(75) * defi_num(args.defi_num), max_length(50),768 ]
+                all_cls_emb = last_layer[:,0,:] # 所有句子的cls 向量
+                cur_train_batch_size = input_ids.size(0)
+                defi_emb = all_cls_emb.view(cur_train_batch_size,args.max_seq_length,args.defi_num,768)
 
                 if not args.do_pron: prons_emb = None
+
                 # 开始执行 model，用于训练
                 loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids, defi_emb)
                 if n_gpu > 1:
@@ -491,15 +483,39 @@ def main():
                 label_ids = label_ids.to(device)
                 prons_ids = prons_ids.to(device)
                 prons_att_mask = prons_att_mask.to(device)
+                
+                # 使用bert 处理，获取其CLS位置的向量
+                # 在这里使用model批量处理 sense，然后得到embedding
+                eval_all_sense = getSenseEmbedding(input_ids,args.bert_model,args.defi_num)                
+                all_sense = []
+                for senses in eval_all_sense:
+                    for sense in senses:
+                        all_sense.append(sense)
+                # print(all_sense)
+                inputs = auto_tokenizer(all_sense,
+                                        return_tensors='pt',
+                                        padding='max_length',
+                                        truncation=True,
+                                        max_length=30)
+                inputs.to(device)
+                # bert处理的大小是 batch_size * max_seq_length(75) * defi_num(args.defi_num) 条句子
+                output = sense_bert(**inputs)
+                last_layer = output.last_hidden_state
+                # last_layer size = [batch_size * max_seq_length(75) * defi_num(args.defi_num), max_length(50),768 ]
+                all_cls_emb = last_layer[:,0,:] # 所有句子的cls 向量
+                # 得到的
+                cur_eval_batch_size = input_ids.size(0)
+                eval_defi_emb = all_cls_emb.view(cur_eval_batch_size,args.max_seq_length,args.defi_num,768)
 
                 if not args.do_pron: prons_emb = None
 
-                with torch.no_grad():
+                with torch.no_grad(): # 不计算
+                    # 这里判断的原因是是否返回计算出的attention 值
                     if args.do_pron:
-                        logits,att = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask)
+                        logits,att = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
                     else:
-                        logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask)
-                
+                        logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
+                                        
                 logits = torch.argmax(F.log_softmax(logits,dim=2),dim=2)
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()

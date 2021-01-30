@@ -527,8 +527,6 @@ def visualize_local(logits, label_ids, input_ids, prons_ids, prons_att_mask, att
     """
     prons_map = {int(prons_map[pron]): pron for pron in prons_map}
 
-
-
     f = open('results/pron_viz.json', 'a')
     results = {}
     for i in range(len(label_ids)):
@@ -656,3 +654,67 @@ def getSenseEmbedding(batch_input_ids,model_dir,defi_num):
                 else:  # 直接填充0                        
                     defi_emb = torch.cat((defi_emb,zero),0) # 在最后一个维度上拼接即可
 '''
+
+"""
+01.path ：sense embedding文件的路径
+功能：获取 所有单词的embedding
+"""
+def getAllWordSenseEmb(path):
+    wordEmb={}# str => list
+    with open(path,'r') as f:
+        line = f.readline()    
+        while(line): 
+            #print(line)
+            line = line.split() # 先按照空格分割
+            if line[-1] == "None": # 以None结尾
+                pass
+            elif line[0][0].isalpha(): # 如果是字符。是一个新的开始                            
+                if line[0] == 'every':
+                    print(f"{line[0]}")                    
+                emb = [] # 装下当下单词所有的emb
+                res1 = line[0] # 得到单词
+                del(line[0])
+                line = [float(_) for _ in line] # 全部转为float 型
+                wordEmb[res1] = emb
+                emb.append(line)
+            else:
+                line = [float(_) for _ in line] # 全部转为float 型             
+                emb.append(line)
+            line = f.readline()
+    return wordEmb
+    # size = []
+
+
+"""获取某句话的emb
+"""
+def getPunEmb(wordEmb,words,defi_num):
+    import torch as t
+    t.set_printoptions(profile="full")
+    zero = t.zeros(1,768) # 用于充当一个词的定义
+    pun_sense_emb = None
+    for word in words:        
+        word = word.lower() # 转为小写
+        cur_word_emb = None
+        if word not in wordEmb.keys(): # 根本找不到这个词。需要拼接 defi_num 次
+            if cur_word_emb is None:
+                cur_word_emb = zero            
+            while(cur_word_emb.size(0) < defi_num):
+                cur_word_emb = t.cat((cur_word_emb,zero),0)            
+        else:
+            cur_word_emb = t.tensor(wordEmb[word])
+            while (cur_word_emb.size(0) < defi_num ): # 如果小于 defi_num 个定义，则扩充到这么多
+                cur_word_emb = t.cat((cur_word_emb,zero),0)
+            # 如果cur_word_emb.size(0) > defi_num  时需要修改
+            while(cur_word_emb.size(0) > defi_num): # 只取前面的defi_num 个
+                cur_word_emb = cur_word_emb[0:defi_num,:]
+        if pun_sense_emb is None:
+            pun_sense_emb = cur_word_emb
+        else:
+            pun_sense_emb = t.cat((pun_sense_emb,cur_word_emb),0) # 拼接得到一句话中所有的embedding
+    return pun_sense_emb  
+    # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
+
+if __name__ == "__main__":
+    path = "/home/lawson/program/learn/wordnet/defi_emb10.txt"
+    res = getAllWordSenseEmb(path)
+    print(res['every'])

@@ -1229,7 +1229,7 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             # 将bert的输出和 训练得到的 pronunciation embedding 的attention 结果拼接在一起
             sequence_output = torch.cat((sequence_output,pron_output),2)
         
-        # defi_emb 的size [batch_size,max_seq_length,10,768]
+        # defi_emb 的size [batch_size,max_seq_length,defi_num,768]
         if defi_emb is not None:
             # 从cpu移到gpu 
             defi_emb = defi_emb.cuda()

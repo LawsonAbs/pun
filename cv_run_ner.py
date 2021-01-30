@@ -232,6 +232,8 @@ def main():
     '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
+    sense_path = "/home/lawson/program/learn/wordnet/defi_emb10.txt"
+    wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
     kf = KFold(n_splits=10)
     kf.get_n_splits(all_examples) # ？？？ 这个功能是？ => 感觉像是什么都没有做
@@ -398,35 +400,23 @@ def main():
                 # print("\n",input_ids.size()) # torch.size[batch_size,max_seq_length]  
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
 
-                # 使用bert 处理，获取其CLS位置的向量
-                # 在这里使用model批量处理 sense，然后得到embedding
-                train_all_sense = getSenseEmbedding(input_ids,args.bert_model,args.defi_num)
-                defi_emb = []
-                all_sense = []
-                for senses in train_all_sense:
-                    for sense in senses:
-                        all_sense.append(sense)
-                # print(all_sense)  
-                inputs = auto_tokenizer(all_sense,
-                                        return_tensors='pt',
-                                        padding='max_length',
-                                        truncation=True,
-                                        max_length=30) 
-                inputs.to(device)
+                defi_emb = None # 存储一批pun得到的sense embedding
+                for input_id in input_ids:
+                    tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                    cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                    print(cur_pun_emb.size())
+                    # size = [word_num * defi_num, defi_dim]
+                    cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
+                    if defi_emb is None:
+                        defi_emb = cur_pun_emb
+                    else:
+                        defi_emb = torch.cat((defi_emb,cur_pun_emb),0)
+                        # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
                 
-                # bert处理的大小是 batch_size * max_seq_length(75) * defi_num(args.defi_num) 条句子
-                # 但是一次不能处理的太多，否则就容易出现 out of memeory 的错误
-                output = sense_bert(**inputs)
-                # last_layer,other = output
-                last_layer = output.last_hidden_state # 返回的
-                # last_layer size = [batch_size * max_seq_length(75) * defi_num(args.defi_num), max_length(50),768 ]
-                all_cls_emb = last_layer[:,0,:] # 所有句子的cls 向量
-                cur_train_batch_size = input_ids.size(0)
-                defi_emb = all_cls_emb.view(cur_train_batch_size,args.max_seq_length,args.defi_num,768)
-
+                defi_emb = defi_emb.cuda()    
                 if not args.do_pron: prons_emb = None
 
-                # 开始执行 model，用于训练
+                # 开始执行 model，用于训练                
                 loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids, defi_emb)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
@@ -484,28 +474,19 @@ def main():
                 prons_ids = prons_ids.to(device)
                 prons_att_mask = prons_att_mask.to(device)
                 
-                # 使用bert 处理，获取其CLS位置的向量
-                # 在这里使用model批量处理 sense，然后得到embedding
-                eval_all_sense = getSenseEmbedding(input_ids,args.bert_model,args.defi_num)                
-                all_sense = []
-                for senses in eval_all_sense:
-                    for sense in senses:
-                        all_sense.append(sense)
-                # print(all_sense)
-                inputs = auto_tokenizer(all_sense,
-                                        return_tensors='pt',
-                                        padding='max_length',
-                                        truncation=True,
-                                        max_length=30)
-                inputs.to(device)
-                # bert处理的大小是 batch_size * max_seq_length(75) * defi_num(args.defi_num) 条句子
-                output = sense_bert(**inputs)
-                last_layer = output.last_hidden_state
-                # last_layer size = [batch_size * max_seq_length(75) * defi_num(args.defi_num), max_length(50),768 ]
-                all_cls_emb = last_layer[:,0,:] # 所有句子的cls 向量
-                # 得到的
-                cur_eval_batch_size = input_ids.size(0)
-                eval_defi_emb = all_cls_emb.view(cur_eval_batch_size,args.max_seq_length,args.defi_num,768)
+                eval_defi_emb = None # 存储一批pun得到的sense embedding
+                for input_id in input_ids:
+                    tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                    cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                    print(cur_pun_emb.size())
+                    # size = [word_num * defi_num, defi_dim]
+                    cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
+                    if eval_defi_emb is None:
+                        eval_defi_emb = cur_pun_emb
+                    else:
+                        eval_defi_emb = torch.cat((eval_defi_emb,cur_pun_emb),0)
+                        # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
+                eval_defi_emb = eval_defi_emb.cuda()
 
                 if not args.do_pron: prons_emb = None
 

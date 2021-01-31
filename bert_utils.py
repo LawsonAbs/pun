@@ -668,9 +668,7 @@ def getAllWordSenseEmb(path):
             line = line.split() # 先按照空格分割
             if line[-1] == "None": # 以None结尾
                 pass
-            elif line[0][0].isalpha(): # 如果是字符。是一个新的开始                            
-                if line[0] == 'every':
-                    print(f"{line[0]}")                    
+            elif line[0][0].isalpha(): # 如果是字符。是一个新的开始              
                 emb = [] # 装下当下单词所有的emb
                 res1 = line[0] # 得到单词
                 del(line[0])
@@ -715,6 +713,6 @@ def getPunEmb(wordEmb,words,defi_num):
     # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
 
 if __name__ == "__main__":
-    path = "/home/lawson/program/learn/wordnet/defi_emb10.txt"
+    path = "./lawson/defi_emb10.txt"
     res = getAllWordSenseEmb(path)
     print(res['every'])

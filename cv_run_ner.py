@@ -117,7 +117,7 @@ def main():
                         help="The initial learning rate for Adam.")
     parser.add_argument("--num_train_epochs",
                         default=3.0,
-                        type=float,
+                        type=int,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--warmup_proportion",
                         default=0.1,
@@ -232,7 +232,7 @@ def main():
     '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
-    sense_path = "/home/lawson/program/learn/wordnet/defi_emb10.txt"
+    sense_path = "./lawson/defi_emb10.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
     kf = KFold(n_splits=10)
@@ -404,7 +404,7 @@ def main():
                 for input_id in input_ids:
                     tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
                     cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
-                    print(cur_pun_emb.size())
+                    # print(cur_pun_emb.size())
                     # size = [word_num * defi_num, defi_dim]
                     cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
                     if defi_emb is None:
@@ -478,7 +478,7 @@ def main():
                 for input_id in input_ids:
                     tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
                     cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
-                    print(cur_pun_emb.size())
+                    #print(cur_pun_emb.size())
                     # size = [word_num * defi_num, defi_dim]
                     cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
                     if eval_defi_emb is None:

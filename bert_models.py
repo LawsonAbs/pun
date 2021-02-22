@@ -1188,9 +1188,9 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.hidden_size = pron_emb_size
         self.sense_size = 768  # 默认设置为768，后面再修改
         if do_pron:
-            self.classifier = nn.Linear(config.hidden_size + self.hidden_size + self.sense_size, num_labels) 
+            self.classifier = nn.Linear(256 + self.hidden_size + self.sense_size, num_labels) 
         else:
-            self.classifier = nn.Linear(config.hidden_size + self.sense_size, num_labels) 
+            self.classifier = nn.Linear(256 + self.sense_size, num_labels) 
         
         # 下面这个应该就是attention 中随机初始化的参数
         self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, requires_grad=True)) # 给 pronunciation 做attention 的操作
@@ -1207,14 +1207,20 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.length_p = max_prons_length
         self.emb_p = pron_emb_size
         self.length_defi = defi_num
-        self.apply(self.init_bert_weights)        
+        self.apply(self.init_bert_weights)
+
+
+        # 添加一个给 sequence_output 做线性映射的过程
+        self.linear_seqence = nn.Linear(768,256)
+        
     
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,defi_emb=None):
         # 估计作者是不想单搞个文件，所以这里就把这个模型类直接放到了当前这个文件中
         # step1. 执行bert得到输出
         sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         # sequence_output: (batch_size, sequence_length, config.hidden_size)
-        
+        sequence_output = self.linear_seqence(sequence_output) # 将768 投影到 256维
+
         # prons:[batch_size,max_seq_length,pron_seq_length,pro_emb_size]
         if prons is not None:
             context = prons.view(-1, self.length_p, self.hidden_size)  # prons:[batch_size*max_seq_length,pron_seq_length,pro_emb_size]

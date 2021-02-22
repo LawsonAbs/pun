@@ -12,9 +12,15 @@ import json
 
 np.random.seed(2019)
 
+import time
+curTime = time.strftime("%m%d_%H%M%S", time.localtime())
+log_name = curTime + '.log'
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.INFO)
+                    level = logging.INFO,
+                    filename=log_name, # 以当前时间作为log名
+                    filemode='w', # 写模式
+                    )
 logger = logging.getLogger(__name__)
 
 
@@ -337,7 +343,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
         prons_ids.append([0] * max_pron_length) # pad the sep with 0's
         prons_att_mask.append([0] * max_pron_length)
         input_ids = tokenizer.convert_tokens_to_ids(ntokens)
-        input_mask = [1] * len(input_ids)
+        input_mask = [1] * len(input_ids) # 对应有token的就是1，没有就是0
         while len(input_ids) < max_seq_length: 
             input_ids.append(0)
             input_mask.append(0)

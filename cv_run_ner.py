@@ -151,6 +151,10 @@ def main():
     parser.add_argument('--server_port', type=str, default='', help="Can be used for distant debugging.")
     args = parser.parse_args()
 
+    logger.info("the paramers in this model are:")
+    for k,v in (vars(args).items()):        
+        logger.info(f"{k,v}") 
+
     if args.server_ip and args.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
         import ptvsd
@@ -194,7 +198,6 @@ def main():
 
     if not args.do_train and not args.do_eval:
         raise ValueError("At least one of `do_train` or `do_eval` must be True.")
-
     if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train:
         logger.info(f"{args.output_dir} already exists. It will be deleted...")
         shutil.rmtree(args.output_dir) # 如果 
@@ -385,9 +388,7 @@ def main():
         best_score = 0
         label_map = {i : label for i, label in enumerate(label_list,1)}
 
-
         # start cross-validation training
-        # 一共有
         logger.info("cv: {}".format(cv_index))
         for index in trange(int(args.num_train_epochs), desc="Train Epoch"):
             tr_loss = 0  # train loss
@@ -399,7 +400,7 @@ def main():
                 input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask = batch
                 # print("\n",input_ids.size()) # torch.size[batch_size,max_seq_length]  
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
-
+                
                 defi_emb = None # 存储一批pun得到的sense embedding
                 for input_id in input_ids:
                     tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
@@ -462,13 +463,13 @@ def main():
             report = classification_report(y_true, y_pred, digits=4)
             logger.info("\n%s", report)# 这里的换行是因为：如果不换行，就会和上面的tqdm输出混一起了。下同
             logger.info("loss: {}".format(tr_loss/nb_tr_examples))
-           
+            
             y_pred, y_true = [], []
             logger.info("\n\n----------------------------Start Evaluating----------------------------")
             for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating Iterator"):
                 prons_emb = prons_embedding(prons_ids).to(device)
                 input_ids = input_ids.to(device)
-                input_mask = input_mask.to(device)
+                input_mask = input_mask.to(device) # ？
                 segment_ids = segment_ids.to(device)
                 label_ids = label_ids.to(device)
                 prons_ids = prons_ids.to(device)
@@ -523,6 +524,7 @@ def main():
            
             if f1_new  > best_score: 
                 best_score = f1_new
+                # 这里的 score_file表示的是一个文件名
                 write_scores(score_file + 'true_'+str(cv_index), y_true) # 最后得到的文件类型是 pickle 
                 write_scores(score_file + 'pred_'+str(cv_index), y_pred)
             
@@ -556,6 +558,7 @@ def main():
         all_prons_ids = torch.tensor([f.prons_id for f in eval_features], dtype=torch.long)
         all_prons_att_mask = torch.tensor([f.prons_att_mask for f in eval_features], dtype=torch.long)
         eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_prons_ids, all_prons_att_mask)
+        
         # Run prediction for full data
         eval_sampler = SequentialSampler(eval_data)
         eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)

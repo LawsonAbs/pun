@@ -163,10 +163,9 @@ def main():
         ptvsd.wait_for_attach()
     
     if "homo" in args.data_dir:
-        mark = "homo-"  # 有什么用？
+        mark = "homo-"  # 有什么用？用于后面生成文件夹使用
     else: 
         mark = "hete-"
-
     
     score_file = "scores/"+ mark + '/'
     if not os.path.isdir(score_file): os.mkdir(score_file)
@@ -214,7 +213,9 @@ def main():
     processor = processors[task_name]()
     # "X" 是什么意思？  => 如果一个单词被分成了两个token，那么就用x标记
     label_list = processor.get_labels() # ["O", "P", "X", "[CLS]", "[SEP]"]
-    num_labels = len(label_list) + 1 
+    
+    # bug 源码后面有一个+1，我这里将其去掉了
+    num_labels = len(label_list)
 
     tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
 
@@ -239,7 +240,7 @@ def main():
     sense_path = "./lawson/defi_emb10.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
-    kf = KFold(n_splits=2)
+    kf = KFold(n_splits=10) # 分割10份
     kf.get_n_splits(all_examples) # ？？？ 这个功能是？ => 感觉像是什么都没有做
 
     
@@ -457,7 +458,9 @@ def main():
                             temp_1.append(label_map[label_ids[i][j]])
                             temp_2.append(label_map[logits[i][j]])                        
                         
-                        if m == 0: # 如果是到最后的部分了，那么就break
+                        # 如果是到pad部分 或者 最后的部分了，那么就break
+                        # 最后的部分，说明参数 max_seq_length 设置的不够大
+                        if m == 0 or j + 1 == len(mask): 
                             y_true.append(temp_1)
                             y_pred.append(temp_2)
                             break
@@ -466,7 +469,11 @@ def main():
             logger.info("\n%s", report)# 这里的换行是因为：如果不换行，就会和上面的tqdm输出混一起了。下同
             logger.info("loss: {}".format(tr_loss/nb_tr_examples))
             
-            y_pred, y_true = [], []
+            '''
+            evaluation 的时候，将源txt文件和 label 一起写入到文件中，这样就方便对照阅读
+            '''
+            y_pred, y_true = [], [] # 用于保存预测和真实的 label
+            all_tokens = [] # 用于保存所有的tokens，然后写入到最后的文件中
             logger.info("\n\n----------------------------Start Evaluating----------------------------")
             for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating Iterator"):
                 prons_emb = prons_embedding(prons_ids).to(device)
@@ -477,9 +484,10 @@ def main():
                 prons_ids = prons_ids.to(device)
                 prons_att_mask = prons_att_mask.to(device)
                 
-                eval_defi_emb = None # 存储一批pun得到的sense embedding
+                eval_defi_emb = None # 存储一批pun得到的sense embedding            
                 for input_id in input_ids:
                     tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                    all_tokens.append(tokens)
                     cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
                     #print(cur_pun_emb.size())
                     # size = [word_num * defi_num, defi_dim]
@@ -507,7 +515,7 @@ def main():
                 for i,mask in enumerate(input_mask):
                     temp_1 =  []
                     temp_2 = []
-                    for j,m in enumerate(mask): # 只要mask 为1 的数据
+                    for j,m in enumerate(mask): # 只要 mask 为1 的数据
                         if j == 0:
                             continue                        
                         else:
@@ -516,11 +524,15 @@ def main():
                             # temp_2.pop()
                             temp_1.append(label_map[label_ids[i][j]])
                             temp_2.append(label_map[logits[i][j]])
-                        if m == 0: # 如果是最后的部分了
+                        
+                        if m == 0 or j + 1 == len(mask): 
+                            temp_1.pop() # pop() 是为了排除SEP 之后的O
+                            temp_2.pop()
                             y_true.append(temp_1)
                             y_pred.append(temp_2)
                             break
-
+            
+            # 是所有的eval data 完之后，才有这个操作，说明y_true是所有的batch 数据得到的结果
             report = classification_report(y_true, y_pred, digits=4)
             logger.info("\n%s", report)
             f1_new = f1_score(y_true, y_pred)
@@ -530,6 +542,9 @@ def main():
                 # 这里的 score_file表示的是一个文件名
                 write_scores(score_file + 'true_'+str(cv_index), y_true) # 最后得到的文件类型是 pickle 
                 write_scores(score_file + 'pred_'+str(cv_index), y_pred)
+
+                '''将源文件和golden label，pred 写在一起'''
+                writeToTxt(all_tokens,y_true,y_pred,score_file+"./all_"+str(cv_index))                
             
         # save a trained model and the associated configuration
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
@@ -552,6 +567,7 @@ def main():
  
     model.to(device)
 
+    # 这个程序中其实是不需要 设置这个 do_eval 参数的，因为这里使用的是交叉验证，而没有专用的数据集来检查这个
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
         # 这是读取 valid.txt 文件作为 eval 数据
         eval_examples = processor.get_dev_examples(args.data_dir)

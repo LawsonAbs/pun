@@ -140,7 +140,7 @@ class NerProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(
             # 使用继承父类的读取文件的方法
-            self._read_csv(os.path.join(data_dir, "train.txt")), "train")
+            self._read_csv(os.path.join(data_dir, "train.txt_1")), "train")
     
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -155,6 +155,7 @@ class NerProcessor(DataProcessor):
     def get_labels(self):
         #return ["O", "B-MISC", "I-MISC",  "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "X", "[CLS]", "[SEP]"]
         #这个具体的各个格式有什么含义？ => 类似于ner中的任务，做一个标记而已
+        # 但是这里的X 是什么意思？
         return ["O", "P", "X", "[CLS]", "[SEP]"]
 
     # 创建一个训练样本
@@ -308,7 +309,7 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
                     # 也就是说，如果这个单词被切成了多段，那么发音只会被记录到第一个token分块中，后面的都用其它的填充
                     prons.append(pron_2) # only send the prons to the first piece_token of a word
                     prons_mask.append(pron_mask_2)
-                else:  # 如果一个单词被 tokenize 成了两段，就会进入到这个else中。就会被标志为一个X 
+                else:  # 如果一个单词被 tokenize 成了两段，就会进入到这个else中。就会被标志为一个X，是在除去第一个part部分后的所有部分都会标为X
                     labels.append("X")
                     prons.append([0] * max_pron_length) # pad other piece_token with 0's
                     prons_mask.append([0] * max_pron_length)

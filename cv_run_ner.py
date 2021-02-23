@@ -212,6 +212,7 @@ def main():
         raise ValueError("Task not found: %s" % (task_name))
     
     processor = processors[task_name]()
+    # "X" 是什么意思？  => 如果一个单词被分成了两个token，那么就用x标记
     label_list = processor.get_labels() # ["O", "P", "X", "[CLS]", "[SEP]"]
     num_labels = len(label_list) + 1 
 
@@ -238,7 +239,7 @@ def main():
     sense_path = "./lawson/defi_emb10.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
-    kf = KFold(n_splits=10)
+    kf = KFold(n_splits=2)
     kf.get_n_splits(all_examples) # ？？？ 这个功能是？ => 感觉像是什么都没有做
 
     
@@ -386,7 +387,12 @@ def main():
         # 总结一下： 不同的train ,eval 步骤都是需要不同的TensoDataset 和 Dataloader 
         model.train()
         best_score = 0
-        label_map = {i : label for i, label in enumerate(label_list,1)}
+
+        '''原先是从1 开始的字典，因为这个会导致后面 456行的代码出现错误
+        temp_2.append(label_map[logits[i][j]]) 
+        错误的原因是 logits[i][j] 会出现0，从而导致这种错误
+        '''
+        label_map = {i : label for i, label in enumerate(label_list,0)}
 
         # start cross-validation training
         logger.info("cv: {}".format(cv_index))
@@ -441,25 +447,21 @@ def main():
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()
                 input_mask = input_mask.to('cpu').numpy()
-                for i,mask in enumerate(input_mask): #有什么作用？主要是看是不是一句话
-                    temp_1 =  []
+                for i,mask in enumerate(input_mask): 
+                    temp_1 = []
                     temp_2 = []
-                    for j,m in enumerate(mask):
+                    for j,m in enumerate(mask): # 只做有文本内容的那部分
                         if j == 0:
                             continue
-                        try:
-                            if m and label_map[label_ids[i][j]] != "X":
-                                temp_1.append(label_map[label_ids[i][j]])
-                                temp_2.append(label_map[logits[i][j]])
-                            else:
-                                temp_1.pop()
-                                temp_2.pop()
-                                y_true.append(temp_1)
-                                y_pred.append(temp_2)
-                                break
-                        except:
-                            pass
-
+                        else:
+                            temp_1.append(label_map[label_ids[i][j]])
+                            temp_2.append(label_map[logits[i][j]])                        
+                        
+                        if m == 0: # 如果是到最后的部分了，那么就break
+                            y_true.append(temp_1)
+                            y_pred.append(temp_2)
+                            break
+            
             report = classification_report(y_true, y_pred, digits=4)
             logger.info("\n%s", report)# 这里的换行是因为：如果不换行，就会和上面的tqdm输出混一起了。下同
             logger.info("loss: {}".format(tr_loss/nb_tr_examples))
@@ -491,7 +493,7 @@ def main():
 
                 if not args.do_pron: prons_emb = None
 
-                with torch.no_grad(): # 不计算
+                with torch.no_grad(): # 不计算梯度
                     # 这里判断的原因是是否返回计算出的attention 值
                     if args.do_pron:
                         logits,att = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
@@ -505,21 +507,22 @@ def main():
                 for i,mask in enumerate(input_mask):
                     temp_1 =  []
                     temp_2 = []
-                    for j,m in enumerate(mask):
+                    for j,m in enumerate(mask): # 只要mask 为1 的数据
                         if j == 0:
-                            continue
-                        if m and label_map[label_ids[i][j]] != "X":
+                            continue                        
+                        else:
+                            # 并不需要pop操作，直接记录所有的tokens
+                            # temp_1.pop()
+                            # temp_2.pop()
                             temp_1.append(label_map[label_ids[i][j]])
                             temp_2.append(label_map[logits[i][j]])
-                        else:
-                            temp_1.pop()
-                            temp_2.pop()
+                        if m == 0: # 如果是最后的部分了
                             y_true.append(temp_1)
                             y_pred.append(temp_2)
                             break
 
             report = classification_report(y_true, y_pred, digits=4)
-            logger.info("\n%s", report)  
+            logger.info("\n%s", report)
             f1_new = f1_score(y_true, y_pred)
            
             if f1_new  > best_score: 
@@ -535,12 +538,18 @@ def main():
         output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
         with open(output_config_file, 'w') as f:
             f.write(model_to_save.config.to_json_string())
-        label_map = {i : label for i, label in enumerate(label_list,1)}    
-        model_config = {"bert_model":args.bert_model,"do_lower":args.do_lower_case,"max_seq_length":args.max_seq_length,"num_labels":len(label_list)+1,"label_map":label_map}
+        
+        # 不理解为什么这里要从下标1 开始标记 map 
+        label_map = {i : label for i, label in enumerate(label_list,1)}
+        model_config = {"bert_model":args.bert_model,
+                        "do_lower":args.do_lower_case,
+                        "max_seq_length":args.max_seq_length,
+                        "num_labels":len(label_list)+1,
+                        "label_map":label_map
+                        }
         json.dump(model_config,open(os.path.join(args.output_dir,"model_config.json"),"w"))
         # load a trained model and config that you have fine-tuned
  
-
     model.to(device)
 
     if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):

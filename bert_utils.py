@@ -18,7 +18,7 @@ log_name = curTime + '.log'
 logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt = '%m/%d/%Y %H:%M:%S',
                     level = logging.INFO,
-                    filename=log_name, # 以当前时间作为log名
+                    filename="./log/"+log_name, # 以当前时间作为log名，可以指定一个文件夹
                     filemode='w', # 写模式
                     )
 logger = logging.getLogger(__name__)
@@ -140,7 +140,7 @@ class NerProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(
             # 使用继承父类的读取文件的方法
-            self._read_csv(os.path.join(data_dir, "train.txt_1")), "train")
+            self._read_csv(os.path.join(data_dir, "train.txt")), "train")
     
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -203,8 +203,9 @@ processors = {"ner":NerProcessor,
 
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
     """Loads a data file into a list of `InputBatch`s."""
-
-    label_map = {label : i for i, label in enumerate(label_list,1)}
+    '''同文件 cv_run_ner.py 中，这里也将label_map 从0开始
+    '''
+    label_map = {label : i for i, label in enumerate(label_list,0)}
     
     features = []
     for (ex_index,example) in enumerate(examples):
@@ -273,7 +274,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
 def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map):
     """Loads a data file into a list of `InputBatch`s."""
     # 根据传入的label_list 生成了一个 label_map，也就是个字典
-    label_map = {label : i for i, label in enumerate(label_list,1)}
+    label_map = {label : i for i, label in enumerate(label_list,0)}
     
     features = []
     for (ex_index,example) in enumerate(examples):
@@ -719,7 +720,26 @@ def getPunEmb(wordEmb,words,defi_num):
     return pun_sense_emb  
     # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
 
+'''
+将 tokens,true label,pred label 写入到txt文件中，写入的结果是：
+tokens true_label pred_label
+'''
+def writeToTxt(tokens,true_label,pred_label,path):    
+    with open(path,'w') as f:
+        line = []        
+        for i in range(len(tokens)): # 遍历tokens 第一维            
+            for j in range(len(tokens[i])): # 遍历 tokens 第二维
+                if tokens[i][j+1] == "[SEP]" :
+                    break
+                # line = tokens[i][j+1] +"\t"+ true_label[i][j] +"\t"+ pred_label[i][j] + "\n"
+                line = f"{tokens[i][j+1]:<20}" +f"{true_label[i][j]:<3}" + f"{pred_label[i][j]:<3}" + "\n"
+                f.write(line)
+            f.write("\n") # 一句话写完之后，使用换行分割
+
+
 if __name__ == "__main__":
-    path = "./lawson/defi_emb10.txt"
-    res = getAllWordSenseEmb(path)
-    print(res['every'])
+    path = "./test.txt"
+    # tokens = ['W','##al','-','Mart']
+    # true_label = ['O','X','O','O']
+    # pred_label = ['O','X','O','O']
+    # writeToTxt(tokens,true_label,pred_label,path)

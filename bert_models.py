@@ -1180,17 +1180,19 @@ class BertForTokenPronsClassification(BertPreTrainedModel):
 
 class BertForTokenPronsClassification_v2(BertPreTrainedModel):
 
-    def __init__(self, config, num_labels, max_seq_length, max_prons_length, pron_emb_size, do_pron,defi_num):
+    def __init__(self, config, num_labels, max_seq_length, max_prons_length, pron_emb_size, do_pron,use_sense,defi_num):
         super(BertForTokenPronsClassification_v2, self).__init__(config)
         self.num_labels = num_labels
         self.bert = BertModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.hidden_size = pron_emb_size
         self.sense_size = 768  # 默认设置为768，后面再修改
+        in_size = 256
         if do_pron:
-            self.classifier = nn.Linear(256 + self.hidden_size + self.sense_size, num_labels) 
-        else:
-            self.classifier = nn.Linear(256 + self.sense_size, num_labels) 
+            in_size += self.hidden_size            
+        if use_sense:
+            in_size += self.sense_size        
+        self.classifier = nn.Linear(in_size, num_labels) 
         
         # 下面这个应该就是attention 中随机初始化的参数
         self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, requires_grad=True)) # 给 pronunciation 做attention 的操作

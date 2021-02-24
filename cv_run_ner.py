@@ -92,9 +92,11 @@ def main():
     parser.add_argument("--do_pron",
                         action='store_true',
                         help='Whether to use pronunciation as features.')
-    parser.add_argument("--use_sense",
+
+    parser.add_argument("--use_sense", # 但是好像在后面没用到
                         action='store_true',
                         help='Whether to use sense as features.')                        
+                        
     parser.add_argument("--do_lower_case",
                         action='store_true',
                         help="Set this flag if you are using an uncased model.")
@@ -272,6 +274,7 @@ def main():
                   max_prons_length=args.max_pron_length, 
                   pron_emb_size=args.pron_emb_size,
                   do_pron=args.do_pron,
+                  use_sense = args.use_sense, # 是否使用sense
                   defi_num = args.defi_num)
                   
         if args.fp16:
@@ -409,22 +412,23 @@ def main():
                 prons_emb = prons_embedding(prons_ids.detach().cpu()).to(device)
                 
                 defi_emb = None # 存储一批pun得到的sense embedding
-                for input_id in input_ids:
-                    tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
-                    cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
-                    # print(cur_pun_emb.size())
-                    # size = [word_num * defi_num, defi_dim]
-                    cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
-                    if defi_emb is None:
-                        defi_emb = cur_pun_emb
-                    else:
-                        defi_emb = torch.cat((defi_emb,cur_pun_emb),0)
-                        # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
+                if args.use_sense : # 如果需要使用sense embedding
+                    for input_id in input_ids:
+                        tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                        # print(cur_pun_emb.size())
+                        # size = [word_num * defi_num, defi_dim]
+                        cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
+                        if defi_emb is None:
+                            defi_emb = cur_pun_emb
+                        else:
+                            defi_emb = torch.cat((defi_emb,cur_pun_emb),0)
+                            # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
                 
-                defi_emb = defi_emb.cuda()    
+                    defi_emb = defi_emb.cuda()    
                 if not args.do_pron: prons_emb = None
 
-                # 开始执行 model，用于训练                
+                # 开始执行 model 用于训练                
                 loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids, defi_emb)
                 if n_gpu > 1:
                     loss = loss.mean() # mean() to average on multi-gpu.
@@ -485,19 +489,20 @@ def main():
                 prons_att_mask = prons_att_mask.to(device)
                 
                 eval_defi_emb = None # 存储一批pun得到的sense embedding            
-                for input_id in input_ids:
-                    tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
-                    all_tokens.append(tokens)
-                    cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
-                    #print(cur_pun_emb.size())
-                    # size = [word_num * defi_num, defi_dim]
-                    cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
-                    if eval_defi_emb is None:
-                        eval_defi_emb = cur_pun_emb
-                    else:
-                        eval_defi_emb = torch.cat((eval_defi_emb,cur_pun_emb),0)
-                        # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
-                eval_defi_emb = eval_defi_emb.cuda()
+                if args.use_sense :                
+                    for input_id in input_ids:
+                        tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                        all_tokens.append(tokens)
+                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                        #print(cur_pun_emb.size())
+                        # size = [word_num * defi_num, defi_dim]
+                        cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
+                        if eval_defi_emb is None:
+                            eval_defi_emb = cur_pun_emb
+                        else:
+                            eval_defi_emb = torch.cat((eval_defi_emb,cur_pun_emb),0)
+                            # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
+                    eval_defi_emb = eval_defi_emb.cuda()
 
                 if not args.do_pron: prons_emb = None
 

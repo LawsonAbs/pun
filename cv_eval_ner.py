@@ -27,6 +27,7 @@ if __name__ == "__main__":
     '''
     简析 sys.argv  的使用：一句运行的命令中，除python 之外的都算是参数
     所以 python cv_eval_ner.py ./scores/homo-/ 10  就有三个参数，自左至右分别是argv[0] ~ argv[2]
+    python cv_eval_ner.py ./scores/hete-/ 10 
     '''
     print(len(sys.argv)) 
     print(main(sys.argv))

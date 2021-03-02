@@ -27,6 +27,7 @@ from sklearn.model_selection import KFold
 from seqeval.metrics import classification_report, f1_score, recall_score, precision_score
 # 直接使用 seqeval 来评测
 
+import logging
 
 def main():
     parser = argparse.ArgumentParser()
@@ -118,7 +119,7 @@ def main():
                         type=float,
                         help="The initial learning rate for Adam.")
     parser.add_argument("--num_train_epochs",
-                        default=3.0,
+                        default=3,
                         type=int,
                         help="Total number of training epochs to perform.")
     parser.add_argument("--warmup_proportion",
@@ -155,11 +156,7 @@ def main():
                         help="The suffix of file")
 
     args = parser.parse_args()
-
-    logger.info("the paramers in this model are:")
-    for k,v in (vars(args).items()):        
-        logger.info(f"{k,v}") 
-
+    
     if args.server_ip and args.server_port:
         # Distant debugging - see https://code.visualstudio.com/docs/python/debugging#_attach-to-a-local-script
         import ptvsd
@@ -181,6 +178,22 @@ def main():
     score_file = "scores/"+ mark + str(args.file_suffix)+'/'
     if not os.path.isdir(score_file): os.mkdir(score_file)
     args.output_dir = score_file + args.output_dir
+
+    import time
+    curTime = time.strftime("%m%d_%H%M%S", time.localtime())
+    log_name = curTime + '.log'
+    # 根据生成的文件夹，将日志写到其中
+    logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                        datefmt = '%m/%d/%Y %H:%M:%S',
+                        level = logging.INFO,
+                        filename= "./"+ score_file + log_name, # 以当前时间作为log名，可以指定一个文件夹
+                        filemode='w', # 写模式
+                        )
+    logger = logging.getLogger(__name__)
+
+    logger.info("the paramers in this model are:")
+    for k,v in (vars(args).items()):        
+        logger.info(f"{k,v}") 
 
     if args.local_rank == -1 or args.no_cuda:
         device = torch.device("cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu")
@@ -337,9 +350,21 @@ def main():
 
         # convert texts to trainable features
         train_features, prons_map = convert_examples_to_pron_features(
-            train_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)
+            train_examples, 
+            label_list,
+            args.max_seq_length,
+            args.max_pron_length,
+            tokenizer,
+            prons_map,
+            logger)
         eval_features, prons_map = convert_examples_to_pron_features(
-            eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)
+            eval_examples,
+            label_list,
+            args.max_seq_length,
+            args.max_pron_length,
+            tokenizer,
+            prons_map,
+            logger)
         prons_emb = embed_extend(prons_emb, len(prons_map))
         prons_emb = torch.tensor(prons_emb, dtype=torch.float)
         # 根据 tensor 创建一个 Embedding 实例

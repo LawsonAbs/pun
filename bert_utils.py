@@ -12,17 +12,15 @@ import json
 
 np.random.seed(2019)
 
-import time
-curTime = time.strftime("%m%d_%H%M%S", time.localtime())
-log_name = curTime + '.log'
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.INFO,
-                    filename="./log/"+log_name, # 以当前时间作为log名，可以指定一个文件夹
-                    filemode='w', # 写模式
-                    )
-logger = logging.getLogger(__name__)
-
+# import time
+# curTime = time.strftime("%m%d_%H%M%S", time.localtime())
+# log_name = curTime + '.log'
+# logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+#                     datefmt = '%m/%d/%Y %H:%M:%S',
+#                     level = logging.INFO,
+#                     filename="./losdsg/" + log_name, # 以当前时间作为log名，可以指定一个文件夹
+#                     filemode='w', # 写模式
+#                     )
 
 
 class InputExample(object):
@@ -271,7 +269,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
 # max_pron_length 表示的是发音的最长字段，如果超过了，就需要截断
 # 这里是对所有的文本数据使用bert进行处理 然后组成一批输入数据
 # 我在这个文件中加入了使用sense embedding 的部分
-def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map):
+def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_pron_length, tokenizer, prons_map,logger):
     """Loads a data file into a list of `InputBatch`s."""
     # 根据传入的label_list 生成了一个 label_map，也就是个字典
     label_map = {label : i for i, label in enumerate(label_list,0)}

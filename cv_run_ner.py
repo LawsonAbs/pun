@@ -151,6 +151,9 @@ def main():
                              "Positive power of 2: static loss scaling value.\n")
     parser.add_argument('--server_ip', type=str, default='', help="Can be used for distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="Can be used for distant debugging.")
+    parser.add_argument('--file_suffix',type=int,default=0,
+                        help="The suffix of file")
+
     args = parser.parse_args()
 
     logger.info("the paramers in this model are:")
@@ -165,11 +168,17 @@ def main():
         ptvsd.wait_for_attach()
     
     if "homo" in args.data_dir:
-        mark = "homo-"  # 有什么用？用于后面生成文件夹使用
+        mark = "homo_"  # 有什么用？用于后面生成文件夹使用
     else: 
-        mark = "hete-"
+        mark = "hete_"
     
-    score_file = "scores/"+ mark + '/'
+    # 这里修改一下文件名
+    if args.use_sense:
+        mark += "sense_"
+    if args.do_pron:
+        mark += "pron_"
+
+    score_file = "scores/"+ mark + str(args.file_suffix)+'/'
     if not os.path.isdir(score_file): os.mkdir(score_file)
     args.output_dir = score_file + args.output_dir
 
@@ -488,7 +497,7 @@ def main():
                 prons_ids = prons_ids.to(device)
                 prons_att_mask = prons_att_mask.to(device)
                 
-                eval_defi_emb = None # 存储一批pun得到的sense embedding            
+                eval_defi_emb = None # 存储一批pun得到的sense embedding          
                 if args.use_sense :                
                     for input_id in input_ids:
                         tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
@@ -503,7 +512,10 @@ def main():
                             eval_defi_emb = torch.cat((eval_defi_emb,cur_pun_emb),0)
                             # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
                     eval_defi_emb = eval_defi_emb.cuda()
-
+                else: # 依然需要找出原来的tokens
+                    for input_id in input_ids:
+                        tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
+                        all_tokens.append(tokens)                                        
                 if not args.do_pron: prons_emb = None
 
                 with torch.no_grad(): # 不计算梯度
@@ -549,7 +561,7 @@ def main():
                 write_scores(score_file + 'pred_'+str(cv_index), y_pred)
 
                 '''将源文件和golden label，pred 写在一起'''
-                writeToTxt(all_tokens,y_true,y_pred,score_file+"./all_"+str(cv_index))                
+                writeToTxt(all_tokens,y_true,y_pred,score_file+"all_"+str(cv_index))                
             
         # save a trained model and the associated configuration
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self

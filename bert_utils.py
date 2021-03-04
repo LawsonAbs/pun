@@ -663,10 +663,10 @@ def getSenseEmbedding(batch_input_ids,model_dir,defi_num):
 
 """
 01.path ：sense embedding文件的路径
-功能：获取 所有单词的embedding
+功能：获取 所有单词的sense embedding
 """
 def getAllWordSenseEmb(path):
-    wordEmb={}# str => list
+    wordEmb={} # {str:list}
     with open(path,'r') as f:
         line = f.readline()    
         while(line): 
@@ -685,8 +685,7 @@ def getAllWordSenseEmb(path):
                 line = [float(_) for _ in line] # 全部转为float 型             
                 emb.append(line)
             line = f.readline()
-    return wordEmb
-    # size = []
+    return wordEmb    
 
 
 """获取某句话的emb
@@ -703,10 +702,11 @@ def getPunEmb(wordEmb,words,defi_num):
             if cur_word_emb is None:
                 cur_word_emb = zero            
             while(cur_word_emb.size(0) < defi_num):
-                cur_word_emb = t.cat((cur_word_emb,zero),0)            
+                cur_word_emb = t.cat((cur_word_emb,zero),0)
         else:
             cur_word_emb = t.tensor(wordEmb[word])
             while (cur_word_emb.size(0) < defi_num ): # 如果小于 defi_num 个定义，则扩充到这么多
+                # 在第0维拼接 0向量
                 cur_word_emb = t.cat((cur_word_emb,zero),0)
             # 如果cur_word_emb.size(0) > defi_num  时需要修改
             while(cur_word_emb.size(0) > defi_num): # 只取前面的defi_num 个

@@ -1,3 +1,5 @@
+import sys
+
 '''简单的方式读取文件
 '''
 def simpleReadXml(pathData,pathLabel):
@@ -40,6 +42,8 @@ def simpleReadXml(pathData,pathLabel):
 
 
 if __name__ == "__main__":
+    defi_num = sys.argv[1]
+    defi_num = int(defi_num) # 转为int 
     # 最后运行的模块
     pathData = "/home/lawson/program/data/puns/test/homo/subtask2-homographic-test.xml"
     pathLabel = "/home/lawson/program/data/puns/test/homo/subtask2-homographic-test.gold"
@@ -54,12 +58,13 @@ if __name__ == "__main__":
             else:
                 continue
     print(len(wordMap)) # 有4137 个词
-
-    defi_num = 10
-    path = "./defi_emb" + str(defi_num) + ".txt"
+    
+    path = "./defi_emb_" + str(defi_num) + ".txt"
     from transformers import BertModel,BertTokenizer
     tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
     model = BertModel.from_pretrained("/home/lawson/pretrain/bert-base-cased")
+    word_gross_num = {} # 每个单词的含义数
+    max_gross = 0 # 每个单词最大的含义数
 
     words = list(wordMap.keys()) # 转为list
     from nltk.corpus import wordnet as wn
@@ -68,17 +73,27 @@ if __name__ == "__main__":
     for word in words:
         senses = wn.synsets(word)
         gross = []
-        for _ in senses:        
+        for _ in senses:
             gross.append(_.definition())
         # print(gross)
+        
+        if len(gross) != 0:
+            word_gross_num[word] = len(gross) 
+        # 找出最大的sense list 的长度
+        if (len(gross) > max_gross):
+            max_gross = len(gross)
             
-        # step2.处理定义    
+
+        # # step2.处理定义
         while(len(gross) > defi_num): # 如果超过一定的设置，则随机删除某一个
             index = int(random.random() * defi_num)
             del(gross[index]) # 删除index 上的值        
             
-        if len(gross)<1:
-            val = word + " None\n"
+        '''
+        如果该单词在wordnet 中找不到释义，那么就写入None
+        '''
+        if len(gross) < 1:
+            val = word + " None\n"  
             with open(path,'a') as f:
                 f.write(val)
         else:    
@@ -95,7 +110,7 @@ if __name__ == "__main__":
             cls_emb = cls_emb.tolist()
             with open(path,'a') as f: # 写入单词
                 f.write(word+" ")
-            for emb in cls_emb:    
+            for emb in cls_emb:
                 res = ""
                 for data in emb:
                     #print(data)
@@ -105,3 +120,15 @@ if __name__ == "__main__":
                 res+="\n"
                 with open(path,'a') as f:
                     f.write(res)
+    temp = sorted(word_gross_num.items(),key = lambda d:d[1],reverse=True)
+    #temp = dict(temp) # 转为dict    
+    #print(len(temp))    
+    li = [0] * 100 # 用于计算出 不同的sense 有多少个
+    for i in range(3999):
+        #print(temp[i])
+        li[temp[i][1]] += 1 
+    
+    print("======== 不同的sense 个数的单词数据分布：========")
+    for i in range(75):
+        print(f"({i},{li[i]})")
+    print(max_gross) # 找出最后最长的sense list 的大小

@@ -31,6 +31,11 @@ import logging
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--defi_num",
+                    default=50,
+                    type=int,
+                    help="The number of definition.")
+
 
     ## Required parameters
     parser.add_argument("--data_dir",
@@ -109,10 +114,6 @@ def main():
                         default=2,
                         type=int,
                         help="Total batch size for eval.")
-    parser.add_argument("--defi_num",
-                        default=5,
-                        type=int,
-                        help="The number of definition.")
 
     parser.add_argument("--learning_rate",
                         default=5e-5,
@@ -154,6 +155,12 @@ def main():
     parser.add_argument('--server_port', type=str, default='', help="Can be used for distant debugging.")
     parser.add_argument('--file_suffix',type=int,default=0,
                         help="The suffix of file")
+
+    parser.add_argument('--use_random',
+                        action='store_true',
+                        default=False, # 默认值为false，即使用 zero 填充
+                        help='to judge whether use random number padding sense embedding')
+
 
     args = parser.parse_args()
     
@@ -261,7 +268,7 @@ def main():
     '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
-    sense_path = "./lawson/defi_emb10.txt"
+    sense_path = "./lawson/defi_emb_50.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
     kf = KFold(n_splits=10) # 分割10份
@@ -449,7 +456,7 @@ def main():
                 if args.use_sense : # 如果需要使用sense embedding
                     for input_id in input_ids:
                         tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
-                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num,args.use_random)
                         # print(cur_pun_emb.size())
                         # size = [word_num * defi_num, defi_dim]
                         cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)
@@ -527,7 +534,7 @@ def main():
                     for input_id in input_ids:
                         tokens = auto_tokenizer.convert_ids_to_tokens(input_id) 
                         all_tokens.append(tokens)
-                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num)
+                        cur_pun_emb = getPunEmb(wordEmb,tokens,args.defi_num,args.use_random)
                         #print(cur_pun_emb.size())
                         # size = [word_num * defi_num, defi_dim]
                         cur_pun_emb = cur_pun_emb.view(args.max_seq_length,args.defi_num,768)

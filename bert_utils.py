@@ -153,8 +153,9 @@ class NerProcessor(DataProcessor):
     def get_labels(self):
         #return ["O", "B-MISC", "I-MISC",  "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "X", "[CLS]", "[SEP]"]
         #这个具体的各个格式有什么含义？ => 类似于ner中的任务，做一个标记而已
-        # 但是这里的X 是什么意思？
-        return ["O", "P", "X", "[CLS]", "[SEP]"]
+        # 但是这里的X 是什么意思？ => bert 中的 tokenizer 过程可能会将一个词分成多个，这里词的后几部分就会被标记为X 
+        #return ["O", "P", "X", "[CLS]", "[SEP]"]
+        return ["O", "P", "[CLS]", "[SEP]"]
 
     # 创建一个训练样本
     def _create_examples(self,lines,set_type):
@@ -309,7 +310,8 @@ def convert_examples_to_pron_features(examples, label_list, max_seq_length, max_
                     prons.append(pron_2) # only send the prons to the first piece_token of a word
                     prons_mask.append(pron_mask_2)
                 else:  # 如果一个单词被 tokenize 成了两段，就会进入到这个else中。就会被标志为一个X，是在除去第一个part部分后的所有部分都会标为X
-                    labels.append("X")
+                    #labels.append("X") # 源码使用X 填充
+                    labels.append("O") # 使用 O 填充
                     prons.append([0] * max_pron_length) # pad other piece_token with 0's
                     prons_mask.append([0] * max_pron_length)
             
@@ -689,25 +691,33 @@ def getAllWordSenseEmb(path):
 
 
 """获取某句话的emb
+defi_num: 表示使用的每个单词的含义个数
+use_random:表示是否使用随机数填充
 """
-def getPunEmb(wordEmb,words,defi_num):
+def getPunEmb(wordEmb,words,defi_num,use_random):
     import torch as t
     t.set_printoptions(profile="full")
-    zero = t.zeros(1,768) # 用于充当一个词的定义
+    # 这里实现两种方式填充：
+    # （1）使用零填充
+    # （2）使用随机数填充
+    if not use_random:
+        pad = t.zeros(1,768) # 用于充当一个词的定义
     pun_sense_emb = None
-    for word in words:        
+    for word in words:
+        if use_random:
+            pad = t.randn(1,768)
         word = word.lower() # 转为小写
         cur_word_emb = None
         if word not in wordEmb.keys(): # 根本找不到这个词。需要拼接 defi_num 次
             if cur_word_emb is None:
-                cur_word_emb = zero            
+                cur_word_emb = pad
             while(cur_word_emb.size(0) < defi_num):
-                cur_word_emb = t.cat((cur_word_emb,zero),0)
+                cur_word_emb = t.cat((cur_word_emb,pad),0)
         else:
             cur_word_emb = t.tensor(wordEmb[word])
             while (cur_word_emb.size(0) < defi_num ): # 如果小于 defi_num 个定义，则扩充到这么多
                 # 在第0维拼接 0向量
-                cur_word_emb = t.cat((cur_word_emb,zero),0)
+                cur_word_emb = t.cat((cur_word_emb,pad),0)
             # 如果cur_word_emb.size(0) > defi_num  时需要修改
             while(cur_word_emb.size(0) > defi_num): # 只取前面的defi_num 个
                 cur_word_emb = cur_word_emb[0:defi_num,:]

@@ -27,11 +27,14 @@ def analyse(path):
     return cnt
 
 if __name__ == "__main__":
-    base = "/home/lawson/program/punLocation/scores/homo_pron/all_"
+    import sys
+    base = sys.argv[1] # 获取路径
+    num = int(sys.argv[2]) # 获取个数
+    #base = "/home/lawson/program/punLocation/scores/homo_pron/all_"
     error = 0
-    for i in range(10):
-        path = base+ str(i)        
-        num = analyse(path)        
+    for i in range(num):
+        path = base+ "/all_"+str(i)
+        num = analyse(path)
         error += num
         print(f"========={i}. => {num}===============================")
     print(f"{error}")

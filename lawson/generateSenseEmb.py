@@ -1,3 +1,8 @@
+"""
+这个文件的功能是：
+01.获取homo puns 中的所有实意词（content word），然后将其词意获取，生成embedding
+02.这里的唯一变量就是：defi_num， 即需要为每个单词生成多少个 embedding？
+"""
 import sys
 
 '''简单的方式读取文件

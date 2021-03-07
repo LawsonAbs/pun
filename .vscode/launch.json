@@ -84,6 +84,13 @@
             "request": "launch",
             "program": "./lawson/getSense.py",
             "console": "integratedTerminal"            
+        },
+        {
+            "name": "subtask3",
+            "type": "python",
+            "request": "launch",
+            "program": "./subtask3/util.py",
+            "console": "integratedTerminal"            
         }
     ]
 }

@@ -1,0 +1,89 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "location",
+            "type": "python",
+            "request": "launch",
+            "program": "cv_run_ner.py",
+            "console": "integratedTerminal",
+            "args": ["--data_dir", "data/semeval2017/data_with_pronunciation/pl-hete/", "--bert_model", "bert-base-cased", "--task_name", "ner", "--output_dir", "out", "--max_seq_length", "55", "--do_train", "--num_train_epochs", "10", "--pron_emb_size", "16",
+                "--train_batch_size","32",
+                "--eval_batch_size","5",
+                "--do_pron",
+                "--use_sense",
+                //"--use_random", // 使用随机数填充
+                "--file_suffix","1"],
+            "env": {"CUDA_VISIBLE_DEVICES":"1"}
+        },
+        {
+            "name": "file_util",
+            "type": "python",
+            "request": "launch",
+            "program": "file_utils.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "utils",
+            "type": "python",
+            "request": "launch",
+            "program": "lawson/utils.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "cv_eval_ner",
+            "type": "python",
+            "request": "launch",
+            "program": "cv_eval_ner.py",
+            "console": "integratedTerminal",
+            "args": ["./scores/homo-/","10"]
+        },
+        {
+            "name": "main",
+            "type": "python",
+            "request": "launch",
+            "program": "lawson/main.py",
+            "console": "integratedTerminal",
+            "args": ["--data_dir","/home/lawson/program/data/puns/test/homo/subtask2-homographic-test.xml",
+                "--label_dir","/home/lawson/program/data/puns/test/homo/subtask2-homographic-test.gold",
+                "--max_seq_len","50",
+                "--bert_model","/home/lawson/pretrain/bert-base-uncased",
+                "--task_name","pun_Location_lawson",
+                "--output_dir","out",
+                "--num_train_epochs","3",
+                "--do_train"
+            ]
+        },
+        {
+            "name": "bert_uitls",
+            "type": "python",
+            "request": "launch",
+            "program": "bert_utils.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "analyse",
+            "type": "python",
+            "request": "launch",
+            "program": "analyse.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "generateEmb",
+            "type": "python",
+            "request": "launch",
+            "program": "./lawson/generateSenseEmb.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "getSense",
+            "type": "python",
+            "request": "launch",
+            "program": "./lawson/getSense.py",
+            "console": "integratedTerminal"            
+        }
+    ]
+}

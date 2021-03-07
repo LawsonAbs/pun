@@ -96,5 +96,5 @@ checkpoint/
 
 #model
 core
-.vscode
+#.vscode   这个还是需要同步更新的
 scores/

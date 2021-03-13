@@ -24,19 +24,15 @@ def getPunWordSenseEmb(path):
         while(line):
             #print(line)
             line = line.split() # 先按照空格分割
-            if line[0][0].isalpha(): # 如果是字符，是一个新的开始
-                res1 = line[0] # 得到单词
-                del(line[0])
-                line = [float(_) for _ in line] # 全部转为float 型
-                wordEmb[res1] = emb
-                emb.append(line)
-                emb = []
-            else:
-                line = [float(_) for _ in line] # 全部转为float 型
-                emb.append(line)
+            #if line[0][0].isalpha(): # 如果是字符，是一个新的开始
+            word = line[0] # 得到单词
+            if word not in wordEmb.keys():
+                wordEmb[word] = []
+            del(line[0]) # 删除当前的word 
+            line = [float(_) for _ in line] # str -> float 
+            wordEmb[word].append(line)
             line = f.readline()
     return wordEmb
-
 
 
 '''
@@ -82,7 +78,7 @@ def getPunWordEmb(wordEmb,words,defi_num,use_random):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--batch_size",type=int,default=5)
-    parser.add_argument("--sense_num",
+    parser.add_argument("--sense_num", # 分类的个数
                         type=int,
                         default=30,
                         help="the number of sense, that is the number of class")
@@ -90,12 +86,12 @@ def main():
     
 
     # step1. 定义数据
-    dataPath = '/home/lawson/program/data/puns/test/homo/test.xml'
+    dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/test.xml'
     puns_dict = getAllPuns(dataPath,None)
 
-    labelPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold"
+    labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"
     keyPath = "/home/lawson/program/punLocation/data/key.txt"
-    dataPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.xml"    
+    dataPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml"    
     label_dict = getTask3Label(keyPath,dataPath, labelPath,outPath=None) 
     
     sensePath = '/home/lawson/program/punLocation/data/pun_word_sense_emb.txt'
@@ -124,10 +120,8 @@ def main():
             if len(temp) > 0: # 更新双关词在 tokens 序列中的位置 
                 cur_location += (len(temp) - 1)
             tokens.extend(temp) # 放入到tokens 中
-            
-        location.append(cur_location)
-        tokens.append("[SEP]")  
-        
+                    
+        tokens.append("[SEP]")        
 
         # 如果不够长，需要分别处理三者
         mask = [1] * (len(tokens))
@@ -148,6 +142,7 @@ def main():
         
         for label in cur_label:
             labels.append(label)    # label <class 'list'>
+            location.append(cur_location)
             input_ids.append(inputs)
             all_tokens.append(tokens)
             attention_mask.append(mask)
@@ -158,6 +153,7 @@ def main():
     attention_mask = t.tensor(attention_mask)
     token_type_ids = t.tensor(token_type_ids)
     labels = t.tensor(labels)
+    location = t.tensor(location)
 
     dataset = MyDataset(input_ids,
                         token_type_ids,
@@ -167,7 +163,7 @@ def main():
 
     dataloader = DataLoader(dataset,
                             batch_size=args.batch_size,
-                            shuffle=False
+                            shuffle=True
                             )
 
     # 获取所有双关词的 embedding 信息
@@ -190,10 +186,10 @@ def main():
         
         sense_emb = [] # 该单词的emb
         # 从input_ids 中找出双关词的 embedding
-        for input_id in enumerate(input_ids):
-            iid = input_id[location] # 找出这个单词的
-            punWord = tokenizer.convert_ids_to_tokens(iid)
-            curEmb = wordEmb[punWord]
+        for i,input_id in enumerate(input_ids):
+            iid = input_id[location[i]] # 找出这个单词的
+            punWord = tokenizer.convert_ids_to_tokens(iid.item())
+            curEmb = wordEmb[punWord] # 找出这个词的embedding 
             sense_emb.append(curEmb)
 
         logits = model(input_ids, token_type_ids, attention_mask,location,sense_emb)

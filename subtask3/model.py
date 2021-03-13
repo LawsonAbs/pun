@@ -43,17 +43,18 @@ class MyModel(nn.Module):
 """
 class MyDataset(Dataset):
     # 传入data【是一个字典】 和 label【是一个list】
-    def __init__(self,input_ids,token_type_ids,attention_mask,location):
+    def __init__(self,input_ids,token_type_ids,attention_mask,location,labels):
         super(MyDataset,self).__init__()
         # 得到三种数据
         self.input_ids = input_ids
         self.token_type_ids = token_type_ids
         self.attention_mask = attention_mask
         self.location = location
+        self.labels = labels
     
     def __len__(self) -> int:
         return len(self.input_ids)
 
     # 返回指定下标的训练数据和标签
     def __getitem__(self, index: int):
-        return self.input_ids[index],self.token_type_ids[index],self.attention_mask[index],self.location[index]
+        return self.input_ids[index],self.token_type_ids[index],self.attention_mask[index],self.location[index],self.labels[index]

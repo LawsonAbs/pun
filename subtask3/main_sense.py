@@ -1,7 +1,7 @@
 import sys
 sys.path.append(r".") # 引入当前目录作为模块，否则下面两个模块无法导入
 from subtask3.model import MyModel,MyDataset
-from subtask3.preprocess import getAllPuns
+from subtask3.preprocess import getAllPuns, getTask3Label
 
 from transformers import BertTokenizer,BertModel
 tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
@@ -91,7 +91,13 @@ def main():
 
     # step1. 定义数据
     dataPath = '/home/lawson/program/data/puns/test/homo/test.xml'
-    puns = getAllPuns(dataPath,None)
+    puns_dict = getAllPuns(dataPath,None)
+
+    labelPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold"
+    keyPath = "/home/lawson/program/punLocation/data/key.txt"
+    dataPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.xml"    
+    label_dict = getTask3Label(keyPath,dataPath, labelPath,outPath=None) 
+    
     sensePath = '/home/lawson/program/punLocation/data/pun_word_sense_emb.txt'
     wordEmb = getPunWordSenseEmb(sensePath) # 得到双关词的sense 的embedding
 
@@ -103,12 +109,17 @@ def main():
     tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
     all_tokens = []
     location = [] # 用于标记哪个单词是双关词
-    for pun in puns: # 处理每一行
+    labels = [] # 所有数据的标签
+    for item in puns_dict.items(): # 处理每一行
+        iid, pun = item
+        cur_label = label_dict[iid] # 找出当前这个双关语id对应的标签
+        if len(cur_label)==0: # 这是那种pun word 和 在key.txt 中对不上的标签
+            continue
         cur_location = int(pun[-1]) # 最后这个位置是双关词的位置，转为int
         tokens = ['[CLS]'] # 当前这句话的tokens
         mask = [] # cur attention_mask
         
-        for word in pun[1:-1]:
+        for word in pun[0:-1]:
             temp = tokenizer.tokenize(word)
             if len(temp) > 0: # 更新双关词在 tokens 序列中的位置 
                 cur_location += (len(temp) - 1)
@@ -132,21 +143,27 @@ def main():
 
         token_type = [0] * max_seq_length
 
-        # 放入总的数据当中
-        input_ids.append(inputs)
-        all_tokens.append(tokens)
-        attention_mask.append(mask)        
-        token_type_ids.append(token_type)
+        # 有几个label，就放几个到总的数据中
+        # 下面这几行代码就实现了：扩充训练数据集的效果
+        
+        for label in cur_label:
+            labels.append(label)    # label <class 'list'>
+            input_ids.append(inputs)
+            all_tokens.append(tokens)
+            attention_mask.append(mask)
+            token_type_ids.append(token_type)
     
     # 全部转为tensor形式
     input_ids = t.tensor(input_ids)
     attention_mask = t.tensor(attention_mask)
     token_type_ids = t.tensor(token_type_ids)
+    labels = t.tensor(labels)
 
     dataset = MyDataset(input_ids,
                         token_type_ids,
                         attention_mask,
-                        location)
+                        location,
+                        labels) 
 
     dataloader = DataLoader(dataset,
                             batch_size=args.batch_size,

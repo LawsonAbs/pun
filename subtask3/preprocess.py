@@ -16,38 +16,26 @@ model = BertModel.from_pretrained("/home/lawson/pretrain/bert-base-cased")
 
 
 """
+功能：
 1.对punWords 的大小写统一，否则会出现saving 和 Saving 都作为双关词的情况
 pathData = subtask3-homographic-test.xml
 pathLabel = subtask3-homographic-test.gold
 """
-def getAllPunWords(pathData,pathLabel):
-    import  xml.dom.minidom as dom
-    # step1.先从pathLabel 中找出所有是双关语的句子
-    allHomo = [] # 标记所有是双关词（句子中的标识）的句子集合 [hom_1,hom_2]    
-    punWords = [] # 表示所有的双关词
-    with open(pathLabel,'r') as f:
-        line = f.readline()
-        while (line!=""):
-            line = line.strip() # 去行末换行
-            line = line.split() # 空格分割
-            #print(line[0])
-            allHomo.append(line[0])            
-            line = f.readline()
-    #print(allHomo)
-    
+def getAllPunWords(dataPath):
+    import  xml.dom.minidom as dom    
     # step2.接着读取双关句，成为一行文本
     #打开xml文档
-    dom2 = dom.parse(pathData)
+    dom2 = dom.parse(dataPath)
     #得到文档元素对象
     root = dom2.documentElement    
-    texts = root.getElementsByTagName("text") # 得到所有的text             
-    #puns = [] # 存储双关语的list
+    texts = root.getElementsByTagName("text") # 得到所有的text    
+    punWords = [] # 表示所有的双关词
     for text in texts:        
         words = text.getElementsByTagName("word") #得到word        
         for word in words:
             a = word.firstChild.data
             a = a.lower()
-            if word.getAttribute('id') in allHomo:
+            if word.getAttribute('senses') == "2":
                 punWords.append(a)  # 这个单词就是双关词        
     
     return punWords  # 1607条语义双关语 以及 对应的双关词
@@ -60,23 +48,19 @@ def getAllPunWords(pathData,pathLabel):
 def getKeyAndSense(punWords,keyPath,sensePath):
     # step 1. 遍历所有的双关词
     for word in punWords: # word:saving
-        if word == "play_out":
-            print("sdfsd")
+        # if word == "play_out":
+        #     print("sdfsd")
         # word_2 = word
-        # # 如果双关词是一个短语，则需要替换掉其中的下划线
-        # if "_"  in word:
-        #     print("true")
-        #     word_2 = word_2.replace("_"," ")
+                        
         synsets = wn.synsets(word) # synsets : [Synset('economy.n.04'), Synset('rescue.n.01'),...]
-        # 将双关词写入到文件中
+        # 先将双关词写入到文件中
         with open(keyPath,'a') as f:
             f.write(word+"\n")
         
         
         # step2. 找出每个双关词的所有的释义项
         # for 中的每次循环都是寻找该单词的某一种含义
-        for syn in synsets:
-            # syn: Synset('economy.n.04')
+        for syn in synsets:  # syn: Synset('economy.n.04')
             name = syn.name()  # economy.n.04
             temp = wn.synset(name) # 得到的是一个单独的Synset
             print(temp,end="\t")
@@ -84,7 +68,7 @@ def getKeyAndSense(punWords,keyPath,sensePath):
             sense = syn.definition()
             print(f"{sense} =>",end="\t")
             keys = ""
-            for lemma in lemmas: # 这个for 循环中的每一项都是同义词，也就是一个意项
+            for lemma in lemmas: # 这个for 循环中的每一项都是同义词，也就是一个义项
                 print(lemma.key(),end=";")
                 keys = keys+ lemma.key()+";" # keys : preservation%1:04:00::;saving%1:04:01::;
             keys = keys.strip(";") # 去行末的分号
@@ -95,32 +79,32 @@ def getKeyAndSense(punWords,keyPath,sensePath):
 
             # step3.处理每个单词的sense
             # sense : an act of economizing; reduction in cost
-            # inputs = tokenizer(sense,return_tensors='pt')
-            # out = model(**inputs)
-            # last_layer = out.last_hidden_state 
-            # cls_emb = last_layer[:,0,:] # 只取 CLS 上的值
+            inputs = tokenizer(sense,return_tensors='pt')
+            out = model(**inputs)
+            last_layer = out.last_hidden_state 
+            cls_emb = last_layer[:,0,:] # 只取 CLS 上的值
 
-            # # step4.将结果写入到文件中
-            # cls_emb = cls_emb.tolist()
-            # with open(sensePath,'a') as f: # 写入单词
-            #     f.write(word+" ")
-            # for emb in cls_emb:
-            #     res = ""
-            #     for data in emb:
-            #         #print(data)
-            #         res += (str(data)) 
-            #         res += " "
-            #     res.strip(" ")
-            #     res+="\n"
-            #     with open(sensePath,'a') as f:
-            #         f.write(res)
+            # step4.将结果写入到文件中
+            cls_emb = cls_emb.tolist()
+            with open(sensePath,'a') as f: # 写入单词
+                f.write(word+" ")
+            for emb in cls_emb:
+                res = ""
+                for data in emb:
+                    #print(data)
+                    res += (str(data)) 
+                    res += " "
+                res.strip(" ")
+                res+="\n"
+                with open(sensePath,'a') as f:
+                    f.write(res)
     
 
 
 """
 得到所有的 homo 双关语。 文件内容如下：
 1.outPath: 生成结果放在 subtask3_puns.txt
-2.dataPath : /home/lawson/program/data/puns/test/homo/subtask3-homographic-test.xml
+2.dataPath : /home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml
 标签 subtask3_labels.txt
 上面两个文件的每行一一对应。其中 subtask3_labels.txt 是结合 ../data/key.txt 下的文件内容生成的
 """
@@ -170,7 +154,7 @@ def getAllPuns(dataPath,outPath):
 1.根据pathLabel 和 keyPath 生成 标签数据
 pun2Label = {hom_2 : [6,9];[9,6];}
 keyPath = /home/lawson/program/punLocation/data/key.txt
-labelPath = /home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold
+labelPath = /home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold
 outPath = 
 """
 def getTask3Label(keyPath,dataPath,labelPath,outPath=None):    
@@ -243,13 +227,15 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
                 sense = pun_word + "_" + sense
                 # 下面这种找不到key的共有269中情况
                 if sense not in keyMap.keys():
-                    print(sense)
+                   # print(sense)  Todo: 待解决的问题
+                    pass
                 else:
                     left_location.add(keyMap[sense])
             for sense in right_sense:
                 sense = pun_word + "_" + sense
                 if sense not in keyMap.keys():
-                    print(sense)
+                    # print(sense)  Todo: 待解决的问题
+                    pass
                 else:
                     right_location.add(keyMap[sense])
             
@@ -280,7 +266,7 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
 
 
 if __name__ == "__main__":
-    # path = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold"        
+    # path = "/home/lawson/program/punLocation/datapuns/test/homo/subtask3-homographic-test.gold"        
     
     # print(len(punWords))    
     # # for _ in punWords[0:10]:
@@ -289,10 +275,10 @@ if __name__ == "__main__":
     # sense_path = "/home/lawson/program/punLocation/data/pun_word_sense_emb.txt"    
 
     # =================================================================
-    dataPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.xml"    
+    dataPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml"    
     outPunPath = "/home/lawson/program/punLocation/data/subtask3_puns.txt"  
 
-    labelPath = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold"    
+    labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"    
     outLabelPath = "/home/lawson/program/punLocation/data/subtask3_labels.txt"
     keyPath = "/home/lawson/program/punLocation/data/key.txt"
     sensePath = "/home/lawson/program/punLocation/data/pun_word_sense_emb.txt"
@@ -300,5 +286,5 @@ if __name__ == "__main__":
     if os.path.exists(outPunPath):
         os.remove(outPunPath)
     #getAllPuns(dataPath,outPunPath) # 一共有1298条数双关语
-    #punWords = getAllPunWords(dataPath,labelPath)
-    #getKeyAndSense(punWords,keyPath,sensePath)    
+    punWords = getAllPunWords(dataPath)
+    getKeyAndSense(punWords,keyPath,sensePath)

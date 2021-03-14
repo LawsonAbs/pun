@@ -16,7 +16,7 @@ import torch.nn as nn
 01.path ：pun word sense embedding文件的路径  path = /home/lawson/program/punLocation/data/pun_word_sense_emb.txt
 功能：获取 所有单词的sense embedding。
 """
-def getPunWordSenseEmb(path):
+def getAllPunWordsSenseEmb(path):
     wordEmb={} # {str:list}
     with open(path,'r') as f:
         line = f.readline()
@@ -70,7 +70,7 @@ def getPunWordEmb(wordEmb,words,defi_num,use_random):
             pun_sense_emb = cur_word_emb
         else:
             pun_sense_emb = t.cat((pun_sense_emb,cur_word_emb),0) # 拼接得到一句话中所有的embedding
-    return pun_sense_emb  
+    return pun_sense_emb
     # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
 
 
@@ -80,10 +80,15 @@ def main():
     parser.add_argument("--batch_size",type=int,default=5)
     parser.add_argument("--sense_num", # 分类的个数
                         type=int,
-                        default=30,
+                        default=50,
                         help="the number of sense, that is the number of class")
-    args = parser.parse_args()
     
+    parser.add_argument("--use_random", # 填充过程使用随机数还是零填充                        
+                        action='store_true',
+                        help="whether to fill with random numbers")
+    
+    args = parser.parse_args()
+    #device = t.device("cuda" if t.cuda.is_available() and not args.no_cuda else "cpu")
 
     # step1. 定义数据
     dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/test.xml'
@@ -95,7 +100,7 @@ def main():
     label_dict = getTask3Label(keyPath,dataPath, labelPath,outPath=None) 
     
     sensePath = '/home/lawson/program/punLocation/data/pun_word_sense_emb.txt'
-    wordEmb = getPunWordSenseEmb(sensePath) # 得到双关词的sense 的embedding
+    wordEmb = getAllPunWordsSenseEmb(sensePath) # 得到双关词的sense 的embedding
 
     # 放到bert 中将使用的项 
     max_seq_length = 20
@@ -141,7 +146,10 @@ def main():
         # 下面这几行代码就实现了：扩充训练数据集的效果
         
         for label in cur_label:
-            labels.append(label)    # label <class 'list'>
+            temp = [0] * 50 # 含义分类
+            temp[label[0]] = 1
+            temp[label[1]] = 1
+            labels.append(temp) # label <class 'list'>
             location.append(cur_location)
             input_ids.append(inputs)
             all_tokens.append(tokens)
@@ -152,7 +160,7 @@ def main():
     input_ids = t.tensor(input_ids)
     attention_mask = t.tensor(attention_mask)
     token_type_ids = t.tensor(token_type_ids)
-    labels = t.tensor(labels)
+    labels = t.tensor(labels, dtype=t.float)
     location = t.tensor(location)
 
     dataset = MyDataset(input_ids,
@@ -168,11 +176,8 @@ def main():
 
     # 获取所有双关词的 embedding 信息
     # sense_emb = getPunWordEmb()
-    ins = 10
-    out = 100
-    dim = 50
-    model = MyModel(ins,out,dim)
-
+    model = MyModel(args.sense_num)
+    
     # step2. 定义模型
     # 优化器要接收模型的参数
     optimizer = t.optim.Adam(model.parameters(),lr=1e-4)
@@ -182,22 +187,36 @@ def main():
     # 这里遍历dataloader 为何会无报错跳出？ => 因为dataloader 的长度为0
     # 待生成 label 
     for data in dataloader:
-        input_ids, token_type_ids, attention_mask, location, labels = data
-        
-        sense_emb = [] # 该单词的emb
+        input_ids, token_type_ids, attention_mask, location, labels = data                
+        pun_words = []
         # 从input_ids 中找出双关词的 embedding
         for i,input_id in enumerate(input_ids):
             iid = input_id[location[i]] # 找出这个单词的
-            punWord = tokenizer.convert_ids_to_tokens(iid.item())
-            curEmb = wordEmb[punWord] # 找出这个词的embedding 
-            sense_emb.append(curEmb)
+            word = tokenizer.convert_ids_to_tokens(iid.item())
+            pun_words.append(word)
 
-        logits = model(input_ids, token_type_ids, attention_mask,location,sense_emb)
-        loss = criterion(logits,labels)
+        cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
+        cur_emb = cur_emb.view(args.batch_size,args.sense_num,768)
+        
         optimizer.zero_grad()
+        logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
+        temp = []
+        for line in logits:
+            a = [0] * 50
+            for num in line:
+                num = int(num.item()) # 转为int                
+                a[num] = 1 #
+            temp.append(a)
+        temp = t.tensor(temp, dtype=t.float,requires_grad=True) # 
+        loss = criterion(temp,labels)
+        #param_optimizer = list(model.named_parameters())
+        #print(param_optimizer)
         loss.backward()
         optimizer.step()
-
+        
 
 if __name__ == "__main__":
+    # model=MyModel(50)
+    # a=list(model.parameters())
+    # print(a)
     main()

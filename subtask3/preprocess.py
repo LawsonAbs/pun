@@ -30,7 +30,7 @@ def getAllPunWords(dataPath):
     root = dom2.documentElement    
     texts = root.getElementsByTagName("text") # 得到所有的text    
     punWords = [] # 表示所有的双关词
-    for text in texts:        
+    for text in texts:
         words = text.getElementsByTagName("word") #得到word        
         for word in words:
             a = word.firstChild.data

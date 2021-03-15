@@ -10,8 +10,9 @@ import torch as t
 import logging
 import argparse
 import torch.nn as nn
-
-
+from tqdm import tqdm
+from sklearn.model_selection import KFold # 引入交叉验证
+from sklearn.metrics import precision_score, recall_score, f1_score # 引入metric 计算
 """
 01.path ：pun word sense embedding文件的路径  path = /home/lawson/program/punLocation/data/pun_word_sense_emb.txt
 功能：获取 所有单词的sense embedding。
@@ -80,18 +81,28 @@ def main():
     parser.add_argument("--batch_size",type=int,default=5)
     parser.add_argument("--sense_num", # 分类的个数
                         type=int,
-                        default=50,
+                        default=100,
                         help="the number of sense, that is the number of class")
     
     parser.add_argument("--use_random", # 填充过程使用随机数还是零填充                        
                         action='store_true',
                         help="whether to fill with random numbers")
     
+    parser.add_argument("--max_seq_length", 
+                        type=int,
+                        default=100,
+                        help="the maximum number of sequences")
+
+    parser.add_argument("--train_epoch", 
+                        type=int,
+                        default=100,
+                        help="the epoch number in train")
     args = parser.parse_args()
     #device = t.device("cuda" if t.cuda.is_available() and not args.no_cuda else "cpu")
 
     # step1. 定义数据
     dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/test.xml'
+    #dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml'
     puns_dict = getAllPuns(dataPath,None)
 
     labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"
@@ -103,7 +114,6 @@ def main():
     wordEmb = getAllPunWordsSenseEmb(sensePath) # 得到双关词的sense 的embedding
 
     # 放到bert 中将使用的项 
-    max_seq_length = 20
     input_ids = []
     attention_mask = []
     token_type_ids = []
@@ -131,22 +141,22 @@ def main():
         # 如果不够长，需要分别处理三者
         mask = [1] * (len(tokens))
         
-        while (len(tokens) < max_seq_length):
+        while (len(tokens) < args.max_seq_length):
             tokens.append('[PAD]')
             mask.append(0)
 
          # cur input_ids
         inputs = tokenizer.convert_tokens_to_ids(tokens)
-        while(len(inputs)< max_seq_length): 
+        while(len(inputs)< args.max_seq_length): 
             inputs.append(0)
 
-        token_type = [0] * max_seq_length
+        token_type = [0] * args.max_seq_length
 
         # 有几个label，就放几个到总的数据中
         # 下面这几行代码就实现了：扩充训练数据集的效果
         
         for label in cur_label:
-            temp = [0] * 50 # 含义分类
+            temp = [0] * args.sense_num # 含义分类
             temp[label[0]] = 1
             temp[label[1]] = 1
             labels.append(temp) # label <class 'list'>
@@ -163,60 +173,119 @@ def main():
     labels = t.tensor(labels, dtype=t.float)
     location = t.tensor(location)
 
-    dataset = MyDataset(input_ids,
-                        token_type_ids,
-                        attention_mask,
-                        location,
-                        labels) 
+    # 得到所有的数据之后，开始分割数据
+    kf = KFold(n_splits=10) # 10折交叉 
+    for train_index, test_index in kf.split(input_ids): # 拿到下标
+        train_index = t.tensor(train_index, dtype=t.long)
+        test_index = t.tensor(test_index, dtype=t.long)
 
-    dataloader = DataLoader(dataset,
-                            batch_size=args.batch_size,
-                            shuffle=True
-                            )
+        # 获取train 的数据
+        train_input_ids = t.index_select(input_ids,0,train_index)
+        train_token_type_ids = t.index_select(token_type_ids,0,train_index)
+        train_attention_mask = t.index_select(attention_mask,0,train_index)
+        train_location = t.index_select(location,0,train_index)
+        train_labels = t.index_select(labels,0,train_index)
 
-    # 获取所有双关词的 embedding 信息
-    # sense_emb = getPunWordEmb()
-    model = MyModel(args.sense_num)
-    
-    # step2. 定义模型
-    # 优化器要接收模型的参数
-    optimizer = t.optim.Adam(model.parameters(),lr=1e-4)
-    criterion = nn.BCELoss()  # 使用交叉熵作为损失
-    
-    # step3. 训练模型
-    # 这里遍历dataloader 为何会无报错跳出？ => 因为dataloader 的长度为0
-    # 待生成 label 
-    for data in dataloader:
-        input_ids, token_type_ids, attention_mask, location, labels = data                
-        pun_words = []
-        # 从input_ids 中找出双关词的 embedding
-        for i,input_id in enumerate(input_ids):
-            iid = input_id[location[i]] # 找出这个单词的
-            word = tokenizer.convert_ids_to_tokens(iid.item())
-            pun_words.append(word)
-
-        cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
-        cur_emb = cur_emb.view(args.batch_size,args.sense_num,768)
+        train_dataset = MyDataset(train_input_ids,
+                            train_token_type_ids,
+                            train_attention_mask,
+                            train_location,
+                            train_labels)
         
-        optimizer.zero_grad()
-        logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
-        temp = []
-        for line in logits:
-            a = [0] * 50
-            for num in line:
-                num = int(num.item()) # 转为int                
-                a[num] = 1 #
-            temp.append(a)
-        temp = t.tensor(temp, dtype=t.float,requires_grad=True) # 
-        loss = criterion(temp,labels)
-        #param_optimizer = list(model.named_parameters())
-        #print(param_optimizer)
-        loss.backward()
-        optimizer.step()
+        train_dataloader = DataLoader(train_dataset,
+                                batch_size=args.batch_size,
+                                shuffle=True
+                                )
+
+        # 获取 eval 的 数据
+        eval_input_ids = t.index_select(input_ids,0,test_index)
+        eval_token_type_ids = t.index_select(token_type_ids,0,test_index)
+        eval_attention_mask = t.index_select(attention_mask,0,test_index)
+        eval_location = t.index_select(location,0,test_index)
+        eval_labels = t.index_select(labels,0,test_index)
+
+        eval_dataset = MyDataset(eval_input_ids,
+                                eval_token_type_ids,
+                                eval_attention_mask,
+                                eval_location,
+                                eval_labels)
+
+        eval_dataloader = DataLoader(eval_dataset, 
+                                    batch_size=args.batch_size, # train  和 eval  共用同一个batch_size
+                                    shuffle=True
+                                    )
+        # 获取所有双关词的 embedding 信息
+        # sense_emb = getPunWordEmb()
+        model = MyModel(args.sense_num)
         
+        # step2. 定义模型
+        # 优化器要接收模型的参数
+        optimizer = t.optim.Adam(model.parameters(),lr=1e-4)
+        # criterion = nn.BCELoss()  # 使用交叉熵作为损失
+        criterion = nn.BCEWithLogitsLoss() # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数            
+        # ============================ start training =====================================    
+        # 这里遍历train_loader 为何会无报错跳出？ => 因为train_loader 的长度为0
+        # 待生成 label 
+        for epoch in tqdm(range(args.train_epoch)):
+            for data in train_dataloader:
+                input_ids, token_type_ids, attention_mask, location, labels = data                
+                pun_words = []
+                # 从input_ids 中找出双关词的 embedding
+                for i,input_id in enumerate(input_ids):
+                    iid = input_id[location[i]] # 找出这个单词的
+                    word = tokenizer.convert_ids_to_tokens(iid.item())
+                    pun_words.append(word)
+
+                cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
+
+                # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size            
+                cur_emb = cur_emb.view(-1,args.sense_num,768)
+
+                logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
+                labels = labels.squeeze_() # 去掉无用的维度
+                loss = criterion(logits,labels)        
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                print(f"epoch = {epoch}, loss = {loss}") 
+
+        # ============================ start evaluating =====================================        
+        all_pred = [] # 所有的预测结果
+        all_gold = [] # golden label
+        for data in tqdm( eval_dataloader):
+            input_ids, token_type_ids, attention_mask, location, labels = data 
+            pun_words = []
+            # 从input_ids 中找出双关词的 embedding
+            for i,input_id in enumerate(input_ids):
+                iid = input_id[location[i]] # 找出这个单词的
+                word = tokenizer.convert_ids_to_tokens(iid.item())
+                pun_words.append(word)
+
+            cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
+            cur_emb = cur_emb.view(-1,args.sense_num,768)
+
+            logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
+            labels = labels.squeeze_()
+            # logits size = [batch_size,sense_num]
+            sig = nn.Sigmoid()
+            res = sig(logits) # 进行sigmoid 处理
+            res = t.topk(res,k=2,dim=1) # 取top k
+            index = res[1] # 取index 部分
+            for i in range(args.batch_size):
+                pred = [0] * args.max_seq_length
+                pred[index[0]] = 1
+                pred[index[1]] = 1
+            all_pred.extend(pred)   # 放到all_pred 中
+            
+            for label in labels:
+                all_gold.extend(label) #
+
+        precision = precision_score(all_gold, all_pred, average='binary')
+        recall = recall_score(all_gold, all_pred, average='binary')
+        f1 = f1_score(all_gold, all_pred, average='binary')
+
+        print(f"epoch = {epoch}, precision = {precision}, recall = {recall},f1 = {f1}")
+        # 计算出recall, precision, f1 值
 
 if __name__ == "__main__":
-    # model=MyModel(50)
-    # a=list(model.parameters())
-    # print(a)
     main()

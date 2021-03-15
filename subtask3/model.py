@@ -35,33 +35,8 @@ class MyModel(nn.Module):
         # con_pun_word_emb size = [batch_size,768]
         con_pun_word_emb = con_pun_word_emb.view(-1,768)
         res = self.attention(con_pun_word_emb,sense_emb,64)
-        # size = [batch_size,sense_num]
-        res = self.softmax(res) 
-        
-        # 寻找最大值的两个下标
-        index = [] 
-        for row in res: 
-            max_index = 0 # 最大
-            mmax_index = 0 # 次大
-
-            max_val = -1
-            mmax_val = -1
-            for i,col in enumerate(row):
-                if col > max_val:
-                    # 更新次新值                    
-                    mmax_index = max_index
-                    mmax_val = max_val
-                    # 更新最大值
-                    max_val = col
-                    max_index = i
-                elif col > mmax_val:
-                    mmax_index = i
-                    mmax_val = col
-            index.append([max_index,mmax_index])
-        
-        index = t.tensor(index, dtype=t.float)
-        return index # 返回最后经过softmax 之后的预测值
-        # size = [batch_size,2]
+        # size = [batch_size,sense_num]        
+        return res 
 
 """
 这个类和之后的代码都是整套的。在这里，传入的data是一个字典，{input_ids:"...",tokens_type_ids:"...",attention_ask:"..."}

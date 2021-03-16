@@ -10,7 +10,7 @@ import torch as t
 import logging
 import argparse
 import torch.nn as nn
-from tqdm import tqdm
+from tqdm import tqdm,trange
 from sklearn.model_selection import KFold # 引入交叉验证
 from sklearn.metrics import precision_score, recall_score, f1_score # 引入metric 计算
 """
@@ -98,11 +98,11 @@ def main():
                         default=100,
                         help="the epoch number in train")
     args = parser.parse_args()
-    #device = t.device("cuda" if t.cuda.is_available() and not args.no_cuda else "cpu")
+    device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
     # step1. 定义数据
-    dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/test.xml'
-    #dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml'
+    #dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/test.xml'
+    dataPath = '/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml'
     puns_dict = getAllPuns(dataPath,None)
 
     labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"
@@ -180,11 +180,11 @@ def main():
         test_index = t.tensor(test_index, dtype=t.long)
 
         # 获取train 的数据
-        train_input_ids = t.index_select(input_ids,0,train_index)
-        train_token_type_ids = t.index_select(token_type_ids,0,train_index)
-        train_attention_mask = t.index_select(attention_mask,0,train_index)
-        train_location = t.index_select(location,0,train_index)
-        train_labels = t.index_select(labels,0,train_index)
+        train_input_ids = t.index_select(input_ids,0,train_index).cuda()
+        train_token_type_ids = t.index_select(token_type_ids,0,train_index).cuda()
+        train_attention_mask = t.index_select(attention_mask,0,train_index).cuda()
+        train_location = t.index_select(location,0,train_index).cuda()
+        train_labels = t.index_select(labels,0,train_index).cuda()
 
         train_dataset = MyDataset(train_input_ids,
                             train_token_type_ids,
@@ -198,11 +198,11 @@ def main():
                                 )
 
         # 获取 eval 的 数据
-        eval_input_ids = t.index_select(input_ids,0,test_index)
-        eval_token_type_ids = t.index_select(token_type_ids,0,test_index)
-        eval_attention_mask = t.index_select(attention_mask,0,test_index)
-        eval_location = t.index_select(location,0,test_index)
-        eval_labels = t.index_select(labels,0,test_index)
+        eval_input_ids = t.index_select(input_ids,0,test_index).cuda()
+        eval_token_type_ids = t.index_select(token_type_ids,0,test_index).cuda()
+        eval_attention_mask = t.index_select(attention_mask,0,test_index).cuda()
+        eval_location = t.index_select(location,0,test_index).cuda()
+        eval_labels = t.index_select(labels,0,test_index).cuda()
 
         eval_dataset = MyDataset(eval_input_ids,
                                 eval_token_type_ids,
@@ -217,74 +217,77 @@ def main():
         # 获取所有双关词的 embedding 信息
         # sense_emb = getPunWordEmb()
         model = MyModel(args.sense_num)
+        model.to(device)
         
         # step2. 定义模型
         # 优化器要接收模型的参数
-        optimizer = t.optim.Adam(model.parameters(),lr=1e-4)
-        # criterion = nn.BCELoss()  # 使用交叉熵作为损失
-        criterion = nn.BCEWithLogitsLoss() # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数            
+        optimizer = t.optim.Adam(model.parameters(),lr=1e-4)        
+        criterion = nn.BCEWithLogitsLoss() # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数
         # ============================ start training =====================================    
         # 这里遍历train_loader 为何会无报错跳出？ => 因为train_loader 的长度为0
         # 待生成 label 
-        for epoch in tqdm(range(args.train_epoch)):
-            for data in train_dataloader:
-                input_ids, token_type_ids, attention_mask, location, labels = data                
+        for epoch in trange(args.train_epoch):
+            avg_loss = 0
+            all_loss = 0
+            for data in tqdm(train_dataloader):
+                cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels = data                
                 pun_words = []
                 # 从input_ids 中找出双关词的 embedding
-                for i,input_id in enumerate(input_ids):
+                for i,input_id in enumerate(cur_input_ids):
                     iid = input_id[location[i]] # 找出这个单词的
                     word = tokenizer.convert_ids_to_tokens(iid.item())
                     pun_words.append(word)
 
-                cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
-
+                cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding                        
                 # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size            
                 cur_emb = cur_emb.view(-1,args.sense_num,768)
-
-                logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
-                labels = labels.squeeze_() # 去掉无用的维度
-                loss = criterion(logits,labels)        
+                cur_emb = cur_emb.cuda() 
+                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)                
+                loss = criterion(logits,cur_labels)        
+                all_loss += loss.item() # 累积总loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                print(f"epoch = {epoch}, loss = {loss}") 
-
+            avg_loss = all_loss/args.batch_size
+            print(f"epoch = {epoch}, avg_loss in this batch is = {avg_loss}")
+        
         # ============================ start evaluating =====================================        
         all_pred = [] # 所有的预测结果
         all_gold = [] # golden label
+        print("==================== start evaluating ==============================")
         for data in tqdm( eval_dataloader):
-            input_ids, token_type_ids, attention_mask, location, labels = data 
+            cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels = data 
             pun_words = []
             # 从input_ids 中找出双关词的 embedding
-            for i,input_id in enumerate(input_ids):
+            for i,input_id in enumerate(cur_input_ids):
                 iid = input_id[location[i]] # 找出这个单词的
                 word = tokenizer.convert_ids_to_tokens(iid.item())
                 pun_words.append(word)
 
             cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
             cur_emb = cur_emb.view(-1,args.sense_num,768)
-
-            logits = model(input_ids, token_type_ids, attention_mask,location,cur_emb)
-            labels = labels.squeeze_()
+            cur_emb = cur_emb.cuda()
+            with t.no_grad(): # 不计算梯度
+                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)            
             # logits size = [batch_size,sense_num]
             sig = nn.Sigmoid()
             res = sig(logits) # 进行sigmoid 处理
             res = t.topk(res,k=2,dim=1) # 取top k
             index = res[1] # 取index 部分
-            for i in range(args.batch_size):
+            index.squeeze_()            
+            for i in range(index.size(0)):
                 pred = [0] * args.max_seq_length
-                pred[index[0]] = 1
-                pred[index[1]] = 1
-            all_pred.extend(pred)   # 放到all_pred 中
+                pred[index[i][0].item()] = 1
+                pred[index[i][1].item()] = 1
+                all_pred.extend(pred)   # 放到all_pred 中
             
-            for label in labels:
-                all_gold.extend(label) #
-
+            for label in cur_labels:
+                all_gold.extend(label.tolist()) #        
         precision = precision_score(all_gold, all_pred, average='binary')
         recall = recall_score(all_gold, all_pred, average='binary')
         f1 = f1_score(all_gold, all_pred, average='binary')
 
-        print(f"epoch = {epoch}, precision = {precision}, recall = {recall},f1 = {f1}")
+        print(f"precision = {precision}, recall = {recall},f1 = {f1}")
         # 计算出recall, precision, f1 值
 
 if __name__ == "__main__":

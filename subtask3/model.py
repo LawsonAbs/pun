@@ -16,6 +16,7 @@ class MyModel(nn.Module):
         self.tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
         self.attention = SelfAttention(sense_num) # 搞一个attention 出来                
         self.softmax = nn.Softmax(1)
+        self.sense_num = sense_num
 
     # 要使用 location 找出相关位置的向量
     # senseEmb 代表的是该双关词在wordnet 中所有含义的 emb
@@ -35,7 +36,8 @@ class MyModel(nn.Module):
         # con_pun_word_emb size = [batch_size,768]
         con_pun_word_emb = con_pun_word_emb.view(-1,768)
         res = self.attention(con_pun_word_emb,sense_emb,64)
-        # size = [batch_size,sense_num]        
+        # size = [batch_size,sense_num] 
+        res = res.view(-1,self.sense_num) # 修改一下形状，que
         return res 
 
 """

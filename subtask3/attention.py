@@ -18,9 +18,9 @@ class SelfAttention(nn.Module):
         # 其维度大小均是 (768,batch_size) 
         # 原始的self-attention 是 x * WQ = q, x * WK = k, x * WV = v。 现在更改为：
         # x * WQ = q, x * WK = k, sense_emb * WV = v
-        self.WQ = t.randn(768,64,requires_grad=True).cuda()
-        self.WV = t.randn(768,64,requires_grad=True).cuda()
+        self.WQ = t.randn(768,64,requires_grad=True).cuda()        
         self.WK = t.randn(768,64,requires_grad=True).cuda()
+        self.WV = t.randn(768,64,requires_grad=True).cuda()
 
         self.linear = nn.Linear(64,sense_num)
 

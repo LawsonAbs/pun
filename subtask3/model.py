@@ -41,8 +41,9 @@ class MyModel(nn.Module):
         return res 
 
 """
-这个类和之后的代码都是整套的。在这里，传入的data是一个字典，{input_ids:"...",tokens_type_ids:"...",attention_ask:"..."}
+1.这个类和之后的代码都是整套的。在这里，传入的data是一个字典，{input_ids:"...",tokens_type_ids:"...",attention_ask:"..."}
 所以就不需要在 DataLoader()中做什么其他的操作，比如在其参数中定义一个 collate_fn=load_fn
+2.供训练部分代码使用的数据集
 """
 class MyDataset(Dataset):
     # 传入data【是一个字典】 和 label【是一个list】
@@ -53,11 +54,34 @@ class MyDataset(Dataset):
         self.token_type_ids = token_type_ids
         self.attention_mask = attention_mask
         self.location = location
-        self.labels = labels
+        self.labels = labels        
     
     def __len__(self) -> int:
         return len(self.input_ids)
 
     # 返回指定下标的训练数据和标签
     def __getitem__(self, index: int):
-        return self.input_ids[index],self.token_type_ids[index],self.attention_mask[index],self.location[index],self.labels[index]
+        return self.input_ids[index], self.token_type_ids[index],\
+                self.attention_mask[index],self.location[index],\
+                self.labels[index]
+
+
+'''
+1.供评测部分使用的数据集
+'''
+class EvalDataset(Dataset):
+    # 传入data【是一个字典】 和 label【是一个list】
+    def __init__(self,input_ids,token_type_ids,attention_mask,location):
+        super(EvalDataset,self).__init__()
+        # 得到三种数据
+        self.input_ids = input_ids
+        self.token_type_ids = token_type_ids
+        self.attention_mask = attention_mask
+        self.location = location           
+    
+    def __len__(self) -> int:
+        return len(self.input_ids)
+
+    # 返回指定下标的训练数据和标签
+    def __getitem__(self, index: int):
+        return self.input_ids[index], self.token_type_ids[index],self.attention_mask[index],self.location[index]                

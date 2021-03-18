@@ -262,7 +262,7 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
     #             f.write(str(val) +";")    
     #         f.write("\n")
     return pun2Label
-
+    #{hom_117 : [[1, 2], [3, 2], [2, 1], [2, 3]] ...} 
 
 
 if __name__ == "__main__":
@@ -286,5 +286,6 @@ if __name__ == "__main__":
     if os.path.exists(outPunPath):
         os.remove(outPunPath)
     #getAllPuns(dataPath,outPunPath) # 一共有1298条数双关语
-    punWords = getAllPunWords(dataPath)
-    getKeyAndSense(punWords,keyPath,sensePath)
+    #punWords = getAllPunWords(dataPath)
+    #getKeyAndSense(punWords,keyPath,sensePath)
+    getTask3Label(keyPath,dataPath, labelPath,outPath=None)

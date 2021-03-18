@@ -1,13 +1,13 @@
 """
 数据预处理脚本，本脚本主要包括如下几个功能：
-1.根据每个双关词生成key list。  => getKeyAndSense
-2.针对上述的双关词的每个key，为其含义生成embedding  => getKeyAndSense
+1.根据每个双关词生成key list。  => writeKeyAndSense
+2.针对上述的双关词的每个key，为其含义生成embedding  => writeKeyAndSense
 3.subtask3 生成训练数据，其目标是生成句子和标签两个文件
 """
 import  xml.dom.minidom as dom
 import sys
 import os 
-
+import torch as t
 from nltk.corpus import wordnet as wn
 from transformers import BertTokenizer,BertModel
 tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")        
@@ -41,17 +41,17 @@ def getAllPunWords(dataPath):
     return punWords  # 1607条语义双关语 以及 对应的双关词
 
 """
-根据得到的双关词列表生成含义
+功能：根据得到的双关词列表生成含义key，并将该含义生成的 embedding 写入到文件中
 1.key_path 代表的是 lemma_key
-2.sense_path 代表的是sense_key
+2.sensePath 代表的是sense embedding 写入的文件地址
 """
-def getKeyAndSense(punWords,keyPath,sensePath):
+def writeKeyAndSense(punWords,keyPath,sensePath):
     # step 1. 遍历所有的双关词
     for word in punWords: # word:saving
         # if word == "play_out":
         #     print("sdfsd")
         # word_2 = word
-                        
+        
         synsets = wn.synsets(word) # synsets : [Synset('economy.n.04'), Synset('rescue.n.01'),...]
         # 先将双关词写入到文件中
         with open(keyPath,'a') as f:
@@ -126,7 +126,7 @@ def getAllPuns(dataPath,outPath):
             a = word.firstChild.data
             pun.append(a)
             if word.getAttribute("senses") == '2': # 说明有两重含义
-                location = word.getAttribute("id").split("_")[2]            
+                location = word.getAttribute("id").split("_")[2]  # 下标从1 开始计数         
         pun.append(location)
         puns.append(pun)
     
@@ -151,17 +151,17 @@ def getAllPuns(dataPath,outPath):
 
 
 """
-1.根据pathLabel 和 keyPath 生成 标签数据
+1.根据 labelPath 和 keyPath 生成 标签数据
 pun2Label = {hom_2 : [6,9];[9,6];}
 keyPath = /home/lawson/program/punLocation/data/key.txt
 labelPath = /home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold
-outPath = 
+outPath = None
 """
 def getTask3Label(keyPath,dataPath,labelPath,outPath=None):    
     # step1. 先处理keyPath，生成一个排序文件
     # 这里仅仅是 economy%1:04:00:: 作为key还是不行的，因为同一个key可能会出现在多个pun word 的释义下
-    # 所以需要使用pun word + key 作为 字典中的一个key （例如，key 可以是 saving_save%2:40:02::）
-    keyMap = {} # economy%1:04:00:: => 0
+    # 所以需要使用 pun word + key 作为 字典中的一个key （例如，key 可以是 saving_economy%1:04:00::）
+    keyMap = {} # save_economy%1:04:00:: => 0
     with open(keyPath,'r') as f:
         line = f.readline()
         cur_row = 0 # 表示当前行
@@ -185,7 +185,7 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
     root = dom2.documentElement    
     texts = root.getElementsByTagName("text") # 得到所有的text
     
-    pun_word_dict = {} # {hom_2_9 : save} 这种数据
+    pun_word_dict = {} # {hom_2_9 : saving} 这种数据
     # 遍历找出每一个双关语
     for text in texts:
         id = text.getAttribute("id")  # 获取id，为了和后面的 subtask3_labels.txt 匹配
@@ -246,9 +246,9 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
                 for right in (right_location):
                     labels.append([left,right])
             
-            for right in (right_location):
-                for left in (left_location):
-                    labels.append([right,left])  
+            # for right in (right_location):
+            #     for left in (left_location):
+            #         labels.append([right,left])  
             line = f.readline()
             pun2Label[id] = labels
     
@@ -265,15 +265,72 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
     #{hom_117 : [[1, 2], [3, 2], [2, 1], [2, 3]] ...} 
 
 
-if __name__ == "__main__":
-    # path = "/home/lawson/program/punLocation/datapuns/test/homo/subtask3-homographic-test.gold"        
-    
-    # print(len(punWords))    
-    # # for _ in punWords[0:10]:
-    # #     print(_)
-    # key_path = "/home/lawson/program/punLocation/data/key.txt"
-    # sense_path = "/home/lawson/program/punLocation/data/pun_word_sense_emb.txt"    
 
+"""
+功能：获取所有 双关词的sense embedding
+01.path ：pun word sense embedding文件的路径  path = /home/lawson/program/punLocation/data/pun_word_sense_emb.txt
+"""
+def getAllPunWordsSenseEmb(path):
+    wordEmb={} # {str:list}
+    with open(path,'r') as f:
+        line = f.readline()        
+        while(line):
+            #print(line)
+            line = line.split() # 先按照空格分割
+            #if line[0][0].isalpha(): # 如果是字符，是一个新的开始
+            word = line[0] # 得到单词
+            if word not in wordEmb.keys():
+                wordEmb[word] = []
+            del(line[0]) # 删除当前的word 
+            line = [float(_) for _ in line] # str -> float 
+            wordEmb[word].append(line)
+            line = f.readline()
+    return wordEmb
+
+
+
+
+
+'''
+从  wordEmb 中 获取某个双关词的释义，并返回。这里做了一些额外的处理：
+1. 如果 word embedding 的个数不够，则需要填充
+'''
+def getPunWordEmb(wordEmb,words,defi_num,use_random):    
+    # t.set_printoptions(profile="full") 是否打印全部的tensor 内容
+
+    # 这里实现两种方式填充：
+    # （1）使用零填充
+    # （2）使用随机数填充
+    if not use_random:
+        pad = t.zeros(1,768) # 用于充当一个词的定义
+    pun_sense_emb = None
+    for word in words:
+        if use_random:
+            pad = t.randn(1,768)
+        word = word.lower() # 转为小写
+        cur_word_emb = None
+        if word not in wordEmb.keys(): # 根本找不到这个词。需要拼接 defi_num 次
+            if cur_word_emb is None:
+                cur_word_emb = pad
+            while(cur_word_emb.size(0) < defi_num):
+                cur_word_emb = t.cat((cur_word_emb,pad),0)
+        else:
+            cur_word_emb = t.tensor(wordEmb[word])
+            while (cur_word_emb.size(0) < defi_num ): # 如果小于 defi_num 个定义，则扩充到这么多
+                # 在第0维拼接 0向量
+                cur_word_emb = t.cat((cur_word_emb,pad),0)
+            # 如果cur_word_emb.size(0) > defi_num  时需要修改
+            while(cur_word_emb.size(0) > defi_num): # 只取前面的defi_num 个
+                cur_word_emb = cur_word_emb[0:defi_num,:]
+        if pun_sense_emb is None:
+            pun_sense_emb = cur_word_emb
+        else:
+            pun_sense_emb = t.cat((pun_sense_emb,cur_word_emb),0) # 拼接得到一句话中所有的embedding
+    return pun_sense_emb
+    # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
+
+
+if __name__ == "__main__":
     # =================================================================
     dataPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml"    
     outPunPath = "/home/lawson/program/punLocation/data/subtask3_puns.txt"  
@@ -286,6 +343,7 @@ if __name__ == "__main__":
     if os.path.exists(outPunPath):
         os.remove(outPunPath)
     #getAllPuns(dataPath,outPunPath) # 一共有1298条数双关语
-    #punWords = getAllPunWords(dataPath)
-    #getKeyAndSense(punWords,keyPath,sensePath)
-    getTask3Label(keyPath,dataPath, labelPath,outPath=None)
+    punWords = getAllPunWords(dataPath)
+    #writeKeyAndSense(punWords,keyPath,sensePath)
+    
+    getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)

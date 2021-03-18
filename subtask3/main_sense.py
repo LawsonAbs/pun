@@ -1,7 +1,9 @@
 import sys
+
+from transformers.utils.dummy_pt_objects import DebertaForSequenceClassification
 sys.path.append(r".") # 引入当前目录作为模块，否则下面两个模块无法导入
 from subtask3.model import MyModel,MyDataset,EvalDataset
-from subtask3.preprocess import getAllPuns, getTask3Label
+from subtask3.preprocess import getAllPuns, getTask3Label,getAllPunWordsSenseEmb,getPunWordEmb
 
 from transformers import BertTokenizer,BertModel
 tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
@@ -12,66 +14,6 @@ import argparse
 import torch.nn as nn
 from tqdm import tqdm,trange
 from sklearn.model_selection import KFold # 引入交叉验证
-
-"""
-功能：获取 所有单词的sense embedding
-01.path ：pun word sense embedding文件的路径  path = /home/lawson/program/punLocation/data/pun_word_sense_emb.txt
-"""
-def getAllPunWordsSenseEmb(path):
-    wordEmb={} # {str:list}
-    with open(path,'r') as f:
-        line = f.readline()        
-        while(line):
-            #print(line)
-            line = line.split() # 先按照空格分割
-            #if line[0][0].isalpha(): # 如果是字符，是一个新的开始
-            word = line[0] # 得到单词
-            if word not in wordEmb.keys():
-                wordEmb[word] = []
-            del(line[0]) # 删除当前的word 
-            line = [float(_) for _ in line] # str -> float 
-            wordEmb[word].append(line)
-            line = f.readline()
-    return wordEmb
-
-
-'''
-从  wordEmb 中 获取某个双关词的释义，并返回。这里做了一些额外的处理：
-1. 如果 word embedding 的个数不够，则需要填充
-'''
-def getPunWordEmb(wordEmb,words,defi_num,use_random):    
-    # t.set_printoptions(profile="full") 是否打印全部的tensor 内容
-
-    # 这里实现两种方式填充：
-    # （1）使用零填充
-    # （2）使用随机数填充
-    if not use_random:
-        pad = t.zeros(1,768) # 用于充当一个词的定义
-    pun_sense_emb = None
-    for word in words:
-        if use_random:
-            pad = t.randn(1,768)
-        word = word.lower() # 转为小写
-        cur_word_emb = None
-        if word not in wordEmb.keys(): # 根本找不到这个词。需要拼接 defi_num 次
-            if cur_word_emb is None:
-                cur_word_emb = pad
-            while(cur_word_emb.size(0) < defi_num):
-                cur_word_emb = t.cat((cur_word_emb,pad),0)
-        else:
-            cur_word_emb = t.tensor(wordEmb[word])
-            while (cur_word_emb.size(0) < defi_num ): # 如果小于 defi_num 个定义，则扩充到这么多
-                # 在第0维拼接 0向量
-                cur_word_emb = t.cat((cur_word_emb,pad),0)
-            # 如果cur_word_emb.size(0) > defi_num  时需要修改
-            while(cur_word_emb.size(0) > defi_num): # 只取前面的defi_num 个
-                cur_word_emb = cur_word_emb[0:defi_num,:]
-        if pun_sense_emb is None:
-            pun_sense_emb = cur_word_emb
-        else:
-            pun_sense_emb = t.cat((pun_sense_emb,cur_word_emb),0) # 拼接得到一句话中所有的embedding
-    return pun_sense_emb
-    # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
 
 
 
@@ -162,20 +104,27 @@ def main():
         train_location = [] # 用于标记哪个单词是双关词
         train_labels = [] # 该双关语的一个标签
         train_total_label = [] # 该双关语的所有标签集合
+        sdf_word = []
         for i in range(len(train_puns)): # 处理每一行
             iid = train_iid[i]
             pun = train_puns[i]
             cur_total_label = label_dict[iid] # 找出当前这个双关语id对应的所有标签
+            cur_location = [] # 因为要保证词被拆分完之后还能还原，所以这里用一个list 记录
+            tokens = ['[CLS]'] # 当前这句话的第一个tokens
+            cur_index = 0 # 用于记录 tokenizer 之后的下标
             if len(cur_total_label)==0: # 这是那种pun word 和 在key.txt 中对不上的标签
                 continue
-            cur_location = int(pun[-1]) # 最后这个位置是双关词的位置，转为int
-            tokens = ['[CLS]'] # 当前这句话的第一个tokens
+            location = (int(pun[-1])) # 最后这个位置是双关词的位置，转为int。 这个location 是从1 开始计数的
+            bp_word = pun[location-1] # 双关词备份
+            sdf_word.append(bp_word)
             mask = [] # cur attention_mask
             
             for word in pun[0:-1]:
                 temp = tokenizer.tokenize(word)
-                if len(temp) > 0: # 更新双关词在 tokens 序列中的位置 
-                    cur_location += (len(temp) - 1)
+                if word== bp_word: # 如果当前这个词就是双关词                    
+                    for i in range(len(temp)):
+                        cur_location.append(cur_index+i+1)
+                cur_index = cur_index + len(temp)
                 tokens.extend(temp) # 放入到tokens 中
             
             tokens.append("[SEP]") # 得到一个完整的tokens
@@ -195,6 +144,8 @@ def main():
             inputs = tokenizer.convert_tokens_to_ids(tokens)
             token_type = [0] * args.max_seq_length
 
+            while(len(cur_location)<5):
+                cur_location.append(-1) # 以-1填充
             
             # 有几个label，就放几个到总的数据中
             # 下面这几行代码就实现了：扩充训练数据集的效果 [虽然扩充后，虽然数据集变大了，但是感觉模型不易收敛]
@@ -225,16 +176,15 @@ def main():
                             train_token_type_ids,
                             train_attention_mask,
                             train_location,
-                            train_labels
+                            train_labels,
+                            sdf_word # 用于记录双关词
                             )
         
         train_dataloader = DataLoader(train_dataset,
                                 batch_size=args.batch_size,
                                 shuffle=True
                                 )
-
-        # 获取所有双关词的 embedding 信息
-        # sense_emb = getPunWordEmb()
+                
         model = MyModel(args.sense_num)
         model.to(device)
         
@@ -250,24 +200,27 @@ def main():
             avg_loss = 0
             all_loss = 0
             for data in tqdm(train_dataloader):
-                cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels = data                
-                pun_words = []
-                # 从input_ids 中找出双关词的 embedding
-                for i,input_id in enumerate(cur_input_ids):
-                    iid = input_id[cur_location[i]] # 找出这个单词的
-                    word = tokenizer.convert_ids_to_tokens(iid.item())
-                    pun_words.append(word)
+                cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels,pun_words = data
+                pun_words = list(pun_words) # 转为list
+                
+                # 从input_ids 中找出所有的双关词的 => 后来直接用Dataset 传入，省得这里再寻找
+                # for i,input_id in enumerate(cur_input_ids):
+                #     iid = input_id[cur_location[i]] # 找出这个单词的
+                #     word = tokenizer.convert_ids_to_tokens(iid.item())
+                #     pun_words.append(word)
 
-                cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding                        
+                #  根据上面找到的双关词，得到其对应的 embedding
+                cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding
                 # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size            
                 cur_emb = cur_emb.view(-1,args.sense_num,768)
                 cur_emb = cur_emb.cuda() 
                 logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)                
-                loss = criterion(logits,cur_labels)        
+                loss = criterion(logits,cur_labels)  # logits size = [batch_size,sense_num]
                 all_loss += loss.item() # 累积总loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                logger.info(f"pun words in this batch are:{pun_words}")
             avg_loss = all_loss/args.batch_size
             logger.info(f"\nepoch = {epoch}, avg_loss in this batch is {avg_loss}\n")
         
@@ -361,11 +314,14 @@ def main():
             index = res[1] # 取index 部分
             index.squeeze_()            
             all_pred.extend(index.tolist())   # 放到all_pred 中
+        
         # TODO:将预测结果写入到文件中，以便可视化
+        out_path = "./" + str(cv_index)
+        visualizeResult(all_pred,pun_words,out_path)
 
         # 计算预测结果的metric
         calMetric(all_pred,eval_total_label,logger)
-        cv_index+=1    
+        cv_index+=1
 
 
 ''' 计算precision， recall，f1 值
@@ -378,9 +334,15 @@ def calMetric(all_pred,eval_total_label,logger):
     # 计算出recall, precision, f1 值
     for i,pred in enumerate(all_pred):
         labels  =  eval_total_label[i] # 获取当前这个eval 的所有标签
-        for label in labels:
+        for label in labels:            
             if pred == label:
                 right+=1
+            # 因为可能pred = [6,9]，但是label是 [9,6]，所以需要将pred进行一个翻转操作，比较翻转后的数据是否相同
+            # 下面这些代码 和 getTask3Label 中 的for 循环二选一
+            pred.reverse()
+            if pred == label:
+                right += 1
+            
     
     # 在任务3中，三者的值相同
     precision = right/len(all_pred)
@@ -391,11 +353,12 @@ def calMetric(all_pred,eval_total_label,logger):
 
 '''
 可视化预测输出
-1.
+1. 将预测结果写入到pred_path 中
 '''
-def visualizeResult(all_pred,eval_input_ids,wordKeys):
-    
-    pass
+def visualizeResult(all_pred,pun_words,pred_path):
+    with open(pred_path) as f:
+        for i,word in enumerate(pun_words):
+            f.write(word+"\t"+all_pred[i])
 
 if __name__ == "__main__":
     main()

@@ -26,7 +26,7 @@ class SelfAttention(nn.Module):
 
     # 传入的两个参数是：输入数据X，d_k(代表的是Query 的维度0)
     """    
-    x: contenxt embedding 
+    x: contenxt embedding
     sense_emb : 每个双关词的sense  embedding 集合。 size = [batch_size,sense_num,768]
     d_k: 用于缩放，初始化为64
     """
@@ -39,9 +39,9 @@ class SelfAttention(nn.Module):
         self.Value = t.matmul(sense_emb,self.WV) # size = [batch_size,sense_num,64]
 
         # 计算乘积
-        out = t.matmul(self.Query,self.Key) # size = [batch_size,sense_num]
+        out = t.matmul(self.Query,self.Key) # size = [batch_size,1,sense_num]
         d_k = math.sqrt(d_k)
-        out = out / d_k  # sqrt(d_k)        
+        out = out / d_k  # sqrt(d_k)
         score = self.softmax(out) # size = [batch_size,sense_num]
         #print(score) 
         

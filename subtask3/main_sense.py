@@ -1,7 +1,6 @@
 import sys
-
-from transformers.utils.dummy_pt_objects import DebertaForSequenceClassification
 sys.path.append(r".") # 引入当前目录作为模块，否则下面两个模块无法导入
+import os
 from subtask3.model import MyModel,MyDataset,EvalDataset
 from subtask3.preprocess import getAllPuns, getTask3Label,getAllPunWordsSenseEmb,getPunWordEmb
 
@@ -36,7 +35,7 @@ def main():
 
     parser.add_argument("--train_epoch", 
                         type=int,
-                        default=50,
+                        default=100,
                         help="the epoch number in train")
 
     parser.add_argument("--expand_sample",
@@ -49,13 +48,15 @@ def main():
     curTime = time.strftime("%m%d_%H%M%S", time.localtime())
     log_name = curTime + '.log'
     
-    score_file = "score/"
-    score_file = score_file + str(args.sense_num) +"_"+ str(args.train_epoch)+"_"
+    score_file = "/home/lawson/program/punLocation/subtask3/scores/"
+    score_file = score_file + "homo/"+str(args.sense_num) +"_"+ str(args.train_epoch)+"/"        
+    if not os.path.isdir(score_file):
+        os.makedirs(score_file)
 
     logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                         datefmt = '%m/%d/%Y %H:%M:%S',
                         level = logging.INFO,
-                        filename= "/home/lawson/program/punLocation/subtask3/"+ score_file + log_name, # 以当前时间作为log名，可以指定一个文件夹
+                        filename= score_file + log_name, # 以当前时间作为log名，可以指定一个文件夹
                         filemode='w', 
                         )
     logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ def main():
         train_location = [] # 用于标记哪个单词是双关词
         train_labels = [] # 该双关语的一个标签
         train_total_label = [] # 该双关语的所有标签集合
-        sdf_word = []
+        train_pun_words = []
         for i in range(len(train_puns)): # 处理每一行
             iid = train_iid[i]
             pun = train_puns[i]
@@ -116,7 +117,7 @@ def main():
                 continue
             location = (int(pun[-1])) # 最后这个位置是双关词的位置，转为int。 这个location 是从1 开始计数的
             bp_word = pun[location-1] # 双关词备份
-            sdf_word.append(bp_word)
+            train_pun_words.append(bp_word)
             mask = [] # cur attention_mask
             
             for word in pun[0:-1]:
@@ -177,7 +178,7 @@ def main():
                             train_attention_mask,
                             train_location,
                             train_labels,
-                            sdf_word # 用于记录双关词
+                            train_pun_words # 用于记录双关词
                             )
         
         train_dataloader = DataLoader(train_dataset,
@@ -190,7 +191,7 @@ def main():
         
         # step2. 定义模型
         # 优化器要接收模型的参数
-        optimizer = t.optim.Adam(model.parameters(),lr=1e-3)
+        optimizer = t.optim.Adam(model.parameters(),lr=8*1e-4)
         criterion = nn.BCEWithLogitsLoss() # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数
         
         # step 3. ============================ start training =====================================    
@@ -201,13 +202,7 @@ def main():
             all_loss = 0
             for data in tqdm(train_dataloader):
                 cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels,pun_words = data
-                pun_words = list(pun_words) # 转为list
-                
-                # 从input_ids 中找出所有的双关词的 => 后来直接用Dataset 传入，省得这里再寻找
-                # for i,input_id in enumerate(cur_input_ids):
-                #     iid = input_id[cur_location[i]] # 找出这个单词的
-                #     word = tokenizer.convert_ids_to_tokens(iid.item())
-                #     pun_words.append(word)
+                pun_words = list(pun_words) # 转为list                           
 
                 #  根据上面找到的双关词，得到其对应的 embedding
                 cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding
@@ -220,7 +215,7 @@ def main():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                logger.info(f"pun words in this batch are:{pun_words}")
+                #logger.info(f"pun words in this batch are:{pun_words}")
             avg_loss = all_loss/args.batch_size
             logger.info(f"\nepoch = {epoch}, avg_loss in this batch is {avg_loss}\n")
         
@@ -235,22 +230,30 @@ def main():
         eval_token_type_ids = []                   
         eval_location = [] # 用于标记哪个单词是双关词
         eval_total_label = [] # 此次交叉训练中所有eval 数据的label
+        eval_pun_words = [] #
         for i in range(len(eval_puns)): # 处理每一行
             iid = eval_iid[i]
             pun = eval_puns[i]
             cur_total_label = label_dict[iid] # 找出当前这个双关语id对应的所有标签
+            cur_index = 0
             if len(cur_total_label)==0: # 这是那种pun word 和 在key.txt 中对不上的标签
                 continue
-            cur_location = int(pun[-1]) # 最后这个位置是双关词的位置，转为int
-            tokens = ['[CLS]'] # 当前这句话的第一个tokens
+            location = (int(pun[-1])) # 最后这个位置是双关词的位置，转为int。 这个location 是从1 开始计数的
+            bp_word = pun[location-1] # 双关词备份
+            eval_pun_words.append(bp_word)
+            cur_location = [] # 最后这个位置是双关词的位置，转为int
             mask = [] # cur attention_mask
-            
+            tokens = ['[CLS]'] # 当前这句话的第一个tokens            
+
             for word in pun[0:-1]:
                 temp = tokenizer.tokenize(word)
-                if len(temp) > 0: # 更新双关词在 tokens 序列中的位置 
-                    cur_location += (len(temp) - 1)
+                if word== bp_word: # 如果当前这个词就是双关词                    
+                    for i in range(len(temp)):
+                        cur_location.append(cur_index+i+1)
+                cur_index = cur_index + len(temp)
                 tokens.extend(temp) # 放入到tokens 中
-            
+
+
             tokens.append("[SEP]") # 得到一个完整的tokens
             mask = [1] * (len(tokens))
             
@@ -263,6 +266,9 @@ def main():
                 tokens.append('[PAD]')
                 mask.append(0)
             
+            while(len(cur_location)<5):
+                cur_location.append(-1) # 以-1填充
+
             input_id = tokenizer.convert_tokens_to_ids(tokens)
             token_type = [0] * args.max_seq_length
             
@@ -279,11 +285,13 @@ def main():
         eval_attention_mask = t.tensor(eval_attention_mask).cuda()
         eval_location = t.tensor(eval_location).cuda()        
 
+
         # 从特定（预划分）的数据中，获取 eval 的 数据
         eval_dataset = EvalDataset(eval_input_ids,
                                 eval_token_type_ids,
                                 eval_attention_mask,
-                                eval_location)
+                                eval_location,
+                                eval_pun_words)
 
         eval_dataloader = DataLoader(eval_dataset, 
                                     batch_size=args.batch_size, # train  和 eval  共用同一个batch_size
@@ -294,15 +302,8 @@ def main():
         all_pred = [] # 所有的预测结果（而不是只有一个batch），最后要放到一起计算f1 值        
         logger.info("==================== start evaluating ==============================")
         for data in tqdm(eval_dataloader):
-            cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location = data
-            pun_words = []
-            # 从input_ids 中找出双关词的 embedding
-            for i,input_id in enumerate(cur_input_ids):
-                iid = input_id[cur_location[i]] # 找出这个单词的
-                word = tokenizer.convert_ids_to_tokens(iid.item())
-                pun_words.append(word)
-
-            cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
+            cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location,cur_pun_words = data                        
+            cur_emb = getPunWordEmb(wordEmb,cur_pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding        
             cur_emb = cur_emb.view(-1,args.sense_num,768)
             cur_emb = cur_emb.cuda()
             with t.no_grad(): # 不计算梯度
@@ -312,11 +313,11 @@ def main():
             res = sig(logits) # 进行sigmoid 处理
             res = t.topk(res,k=2,dim=1) # 取top k
             index = res[1] # 取index 部分
-            index.squeeze_()            
+            index.squeeze_()
             all_pred.extend(index.tolist())   # 放到all_pred 中
         
         # TODO:将预测结果写入到文件中，以便可视化
-        out_path = "./" + str(cv_index)
+        out_path = score_file + str(cv_index) + ".txt"
         visualizeResult(all_pred,pun_words,out_path)
 
         # 计算预测结果的metric
@@ -334,15 +335,18 @@ def calMetric(all_pred,eval_total_label,logger):
     # 计算出recall, precision, f1 值
     for i,pred in enumerate(all_pred):
         labels  =  eval_total_label[i] # 获取当前这个eval 的所有标签
-        for label in labels:            
-            if pred == label:
-                right+=1
-            # 因为可能pred = [6,9]，但是label是 [9,6]，所以需要将pred进行一个翻转操作，比较翻转后的数据是否相同
-            # 下面这些代码 和 getTask3Label 中 的for 循环二选一
-            pred.reverse()
-            if pred == label:
-                right += 1
-            
+        # TODO: 这个地方待寻找原因
+        try:
+            for label in labels:
+                if pred == label:
+                    right+=1
+                # 因为可能pred = [6,9]，但是label是 [9,6]，所以需要将pred进行一个翻转操作，比较翻转后的数据是否相同
+                # 下面这些代码 和 getTask3Label 中 的for 循环二选一
+                pred.reverse()
+                if pred == label:
+                    right += 1
+        except:
+            print("pred 的值存在问题")
     
     # 在任务3中，三者的值相同
     precision = right/len(all_pred)
@@ -356,9 +360,11 @@ def calMetric(all_pred,eval_total_label,logger):
 1. 将预测结果写入到pred_path 中
 '''
 def visualizeResult(all_pred,pun_words,pred_path):
-    with open(pred_path) as f:
+    with open(pred_path,'w') as f:
         for i,word in enumerate(pun_words):
-            f.write(word+"\t"+all_pred[i])
+            pred = all_pred[i]
+            pred = str(pred[0] ) + str(pred[1])
+            f.write(word+"\t"+pred + "\n")
 
 if __name__ == "__main__":
     main()

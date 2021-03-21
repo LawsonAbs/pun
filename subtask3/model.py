@@ -49,7 +49,7 @@ class MyModel(nn.Module):
         con_pun_word_emb = con_pun_word_emb.view(-1,768)
         res = self.attention(con_pun_word_emb,sense_emb,64)
         # size = [batch_size,sense_num] 
-        res = res.view(-1,self.sense_num) # 修改一下形状，que
+        res = res.view(-1,self.sense_num) # 修改一下形状
         return res 
 
 """

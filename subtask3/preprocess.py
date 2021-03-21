@@ -116,7 +116,8 @@ def getAllPuns(dataPath,outPath):
     #得到文档元素对象
     root = dom2.documentElement    
     texts = root.getElementsByTagName("text") # 得到所有的text
-    
+    len_map = {} # 10:3 双关语句子长度到个数的map
+
     # 遍历找出每一个双关语
     for text in texts:
         id = text.getAttribute("id")  # 获取id，为了和后面的 subtask3_labels.txt 匹配
@@ -127,9 +128,16 @@ def getAllPuns(dataPath,outPath):
             pun.append(a)
             if word.getAttribute("senses") == '2': # 说明有两重含义
                 location = word.getAttribute("id").split("_")[2]  # 下标从1 开始计数         
+        # 用于计算
+        cur_len = len(pun)
+        if cur_len not in len_map:
+            len_map[cur_len] = 1
+        else:
+            len_map[cur_len] += 1
+
         pun.append(location)
         puns.append(pun)
-    
+
     # 将数据写入到文件中
     # with open(outPath,'w') as f:
     #     for pun in puns:
@@ -139,7 +147,10 @@ def getAllPuns(dataPath,outPath):
     #         line += "\n" 
     #         f.write(line)
     #print(puns[1])
-    
+
+    # 对字典进行排序
+    res = sorted(len_map.items(),key = lambda x:x[0])
+
     # 对puns 的形式做一个修改，最后以一个字典的形式返回
     # puns : 1607条语义双关语 以及 对应的双关词
     pun_dict = {} # id => pun

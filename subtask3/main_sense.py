@@ -13,37 +13,54 @@ import argparse
 import torch.nn as nn
 from tqdm import tqdm,trange
 from sklearn.model_selection import KFold # 引入交叉验证
-
+from visdom import Visdom # 可视化输出loss
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--batch_size",type=int,default=5)
-    parser.add_argument("--sense_num", # 分类的个数，这里的个数我还是觉得不应该太大
+    parser.add_argument("--batch_size",
                         type=int,
-                        default=30,
+                        default=64)
+    parser.add_argument("--sense_num", # 分类的个数，这里的个数我还是觉得不应该太大。所以这里分成10个
+                        type=int,
+                        default=10,
                         help="the number of sense, that is the number of class")
     
     parser.add_argument("--use_random", # 填充过程使用随机数还是零填充                        
                         action='store_true',
                         help="whether to fill with random numbers")
     
+
+    # max_seq_length 这个参数是通过计算各个pun的长度得出的结果
     parser.add_argument("--max_seq_length", 
                         type=int,
-                        default=20,  # 这里的值不能太大，我觉得会影响数值
+                        default=50,  # 这里的值不能太大，我觉得会影响数值
                         help="the maximum number of sequences")
 
     parser.add_argument("--train_epoch", 
                         type=int,
-                        default=100,
+                        default=3, # 是因为经过可视化之后，发现35左右就已经收敛了
                         help="the epoch number in train")
 
     parser.add_argument("--expand_sample",
                         action='store_true',                        
                         help="if expand the sample") # 是否扩展样本训练
 
+    parser.add_argument("--loss_weight",
+                        default=100,
+                        type = int,
+                        help="help to reduce loss") # 是否扩展样本训练
+
+    parser.add_argument("--splits_num",
+                    default=5, # 因为数据量太小，所以这里就设置成5
+                    type = int,
+                    help="help to reduce loss") # 是否扩展样本训练
+
+    parser.add_argument("--lr",default=1e-3,type=float,help="learning rate")
+
     args = parser.parse_args()
 
+    # ============准备1. 日志相关文件============
     import time
     curTime = time.strftime("%m%d_%H%M%S", time.localtime())
     log_name = curTime + '.log'
@@ -60,7 +77,7 @@ def main():
                         filemode='w', 
                         )
     logger = logging.getLogger(__name__)
-
+   
     
     device = t.device("cuda" if t.cuda.is_available() else "cpu")
 
@@ -87,11 +104,17 @@ def main():
         all_iid.append(iid)
         all_puns.append(pun)
     
+    # 将所有参数写入到日志文件中
+    logger.info(args)
+
     # 得到所有的数据之后，开始分割数据
-    kf = KFold(n_splits=10) # 10折交叉 
+    kf = KFold(n_splits=args.splits_num) # 5折交叉 
     cv_index = 1 
     for train_index, eval_index in kf.split(all_puns):
         logger.info(f"开始第 cv={cv_index} 次交叉训练")
+        # 设置visdom画图的效果
+        viz = Visdom()
+        win = "train_loss_"+ str(cv_index)
         # ============ train中的数据需要组合生成   ==================
         # step 1.得到训练数据
         train_iid = [all_iid[i] for i in train_index]
@@ -191,33 +214,41 @@ def main():
         
         # step2. 定义模型
         # 优化器要接收模型的参数
-        optimizer = t.optim.Adam(model.parameters(),lr=8*1e-4)
-        criterion = nn.BCEWithLogitsLoss() # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数
+        optimizer = t.optim.Adam(model.parameters(),lr=args.lr)
+        
+        # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数
+        # 同时给这个损失函数设置一个权重值 weight
+        # args.loss_weight  => negative : positive = 28:2 = 14
+        pos_weight = t.full([args.sense_num],args.loss_weight).cuda()        
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) 
         
         # step 3. ============================ start training =====================================    
         # 这里遍历train_loader 为何会无报错跳出？ => 因为train_loader 的长度为0
         # 待生成 label 
         for epoch in trange(args.train_epoch):
             avg_loss = 0
-            all_loss = 0
+            all_loss = 0                        
             for data in tqdm(train_dataloader):
                 cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location, cur_labels,pun_words = data
                 pun_words = list(pun_words) # 转为list                           
 
                 #  根据上面找到的双关词，得到其对应的 embedding
                 cur_emb = getPunWordEmb(wordEmb,pun_words,args.sense_num,args.use_random)  # 找出这个词的embedding
-                # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size            
+                # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size
                 cur_emb = cur_emb.view(-1,args.sense_num,768)
-                cur_emb = cur_emb.cuda() 
-                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)                
+                cur_emb = cur_emb.cuda()
+                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)
                 loss = criterion(logits,cur_labels)  # logits size = [batch_size,sense_num]
                 all_loss += loss.item() # 累积总loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 #logger.info(f"pun words in this batch are:{pun_words}")
+
             avg_loss = all_loss/args.batch_size
-            logger.info(f"\nepoch = {epoch}, avg_loss in this batch is {avg_loss}\n")
+            # win参数代表唯一标识； update 指定了更新方式            
+            viz.line([avg_loss], [epoch], win=win, update="append")
+            logger.info(f"\nepoch = {epoch}, avg_loss = {avg_loss}\n")
         
 
         # step 4. ============================ start evaluating =====================================        
@@ -299,7 +330,8 @@ def main():
                                     )
 
 
-        all_pred = [] # 所有的预测结果（而不是只有一个batch），最后要放到一起计算f1 值        
+        all_pred = [] # 所有的预测结果（而不是只有一个batch），最后要放到一起计算f1 值           
+        eval_pun_words = []        
         logger.info("==================== start evaluating ==============================")
         for data in tqdm(eval_dataloader):
             cur_input_ids, cur_token_type_ids, cur_attention_mask, cur_location,cur_pun_words = data                        
@@ -315,10 +347,11 @@ def main():
             index = res[1] # 取index 部分
             index.squeeze_()
             all_pred.extend(index.tolist())   # 放到all_pred 中
-        
+            eval_pun_words.extend(cur_pun_words)
+
         # TODO:将预测结果写入到文件中，以便可视化
         out_path = score_file + str(cv_index) + ".txt"
-        visualizeResult(all_pred,pun_words,out_path)
+        visualizeResult(all_pred,eval_pun_words,out_path,eval_total_label)
 
         # 计算预测结果的metric
         calMetric(all_pred,eval_total_label,logger)
@@ -346,25 +379,42 @@ def calMetric(all_pred,eval_total_label,logger):
                 if pred == label:
                     right += 1
         except:
-            print("pred 的值存在问题")
+            logger.INFO("pred 的值存在问题")
     
     # 在任务3中，三者的值相同
     precision = right/len(all_pred)
     recall = right/len(all_pred)
     f1 = right/len(all_pred)
-    logger.info(f"\nprecision = {precision}, recall = {recall},f1 = {f1}\n")        
+    logger.info(f"\nprecision = {precision}, recall = {recall},f1 = {f1}\n")  
+    print(f"f1={f1}")
 
 
 '''
 可视化预测输出
 1. 将预测结果写入到pred_path 中
 '''
-def visualizeResult(all_pred,pun_words,pred_path):
+def visualizeResult(all_pred,pun_words,pred_path,all_golden):
     with open(pred_path,'w') as f:
         for i,word in enumerate(pun_words):
-            pred = all_pred[i]
-            pred = str(pred[0] ) + str(pred[1])
-            f.write(word+"\t"+pred + "\n")
+            pred = all_pred[i]            
+            labels  =  all_golden[i] # 获取当前这个eval 的所有标签
+            flag = 0                
+            try:
+                for label in labels:
+                    if pred == label:
+                        flag = 1
+                    pred.reverse()
+                    if pred == label:
+                        flag = 1
+            except:
+                pass            
+            pred = "("+str(pred[0] ) +","+ str(pred[1])+")" 
+            gold = str(all_golden[i])
+            if(flag):
+                f.write("√\t"+word+"\t"+pred + ";" + gold+"\n")
+            else:
+                f.write("x\t"+word+"\t"+pred + ";" + gold+"\n")
+            
 
 if __name__ == "__main__":
     main()

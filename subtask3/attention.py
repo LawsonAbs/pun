@@ -1,27 +1,30 @@
 import torch.nn as nn
 import torch as t
 import math 
+from torch.nn.parameter import Parameter
 
 """
 实现attention的操作
 1.键值对attention
 2.Key, Query, Value, X
 """
-
 class SelfAttention(nn.Module):
     # 这里传入的query 是一个向量
     def __init__(self,sense_num):
         super(SelfAttention, self).__init__()        
         self.softmax = nn.Softmax(2)
 
+        """
         # 初始化（随机生成）三个矩阵。这三个矩阵，全局唯一
         # 其维度大小均是 (768,batch_size) 
         # 原始的self-attention 是 x * WQ = q, x * WK = k, x * WV = v。 现在更改为：
         # x * WQ = q, x * WK = k, sense_emb * WV = v
-        self.WQ = t.randn(768,64,requires_grad=True).cuda()        
-        self.WK = t.randn(768,64,requires_grad=True).cuda()
-        self.WV = t.randn(768,64,requires_grad=True).cuda()
-
+        2. Parameter 是将其设置为Parameter
+        """
+        self.WQ = Parameter(t.randn(768,64,requires_grad=True).cuda())
+        self.WK = Parameter(t.randn(768,64,requires_grad=True).cuda())
+        self.WV = Parameter(t.randn(768,64,requires_grad=True).cuda())
+        
         self.linear = nn.Linear(64,sense_num)
 
     # 传入的两个参数是：输入数据X，d_k(代表的是Query 的维度0)
@@ -43,7 +46,7 @@ class SelfAttention(nn.Module):
         d_k = math.sqrt(d_k)
         out = out / d_k  # sqrt(d_k)
         score = self.softmax(out) # size = [batch_size,sense_num]
-        #print(score) 
+        #print(score)
         
         res = t.matmul(score,self.Value) # size = [batch_size,64]
         res = self.linear(res) # size = [batch_size,sense_num]            

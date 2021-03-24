@@ -276,6 +276,29 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
     #{hom_117 : [[1, 2], [3, 2], [2, 1], [2, 3]] ...} 
 
 
+"""
+这个方法和上面这个方法很相似，但是下面这个方法是直接读取文件然后获取数据
+"""
+def readTask3Label(labelPath):
+    pun2Label = {}
+    with open(labelPath,'r') as f:
+        line = f.readline()
+        while(line):
+            line = line.strip()
+            line = line.replace(" ","")
+            line = line.split() # 分割
+            
+            id = line[0] # 得到id
+            if len(line) < 2:
+                line = f.readline()
+                continue
+            labels = line[1] # 得到标签
+            labels = labels[0:-1].split(";")
+            temp=list(map(lambda x:eval(x),labels))
+            pun2Label[id] = temp
+            line = f.readline()
+    #print(pun2Label)
+    return pun2Label
 
 """
 功能：获取所有 双关词的sense embedding
@@ -350,11 +373,13 @@ if __name__ == "__main__":
     outLabelPath = "/home/lawson/program/punLocation/data/subtask3_labels.txt"
     keyPath = "/home/lawson/program/punLocation/data/key.txt"
     sensePath = "/home/lawson/program/punLocation/data/pun_word_sense_emb.txt"
+    special_label = "/home/lawson/program/punLocation/data/special_2.txt"
 
-    if os.path.exists(outPunPath):
-        os.remove(outPunPath)
+    # if os.path.exists(outPunPath):
+    #     os.remove(outPunPath)
     #getAllPuns(dataPath,outPunPath) # 一共有1298条数双关语
-    punWords = getAllPunWords(dataPath)
+    #punWords = getAllPunWords(dataPath)
     #writeKeyAndSense(punWords,keyPath,sensePath)
-    
-    getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)
+    #getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)
+    readTask3Label(special_label)
+

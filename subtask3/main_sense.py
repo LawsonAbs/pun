@@ -2,7 +2,7 @@ import sys
 sys.path.append(r".") # 引入当前目录作为模块，否则下面两个模块无法导入
 import os
 from subtask3.model import MyModel,MyDataset,EvalDataset
-from subtask3.preprocess import getAllPuns, getTask3Label,getAllPunWordsSenseEmb,getPunWordEmb
+from subtask3.preprocess import getAllPuns, getTask3Label,getAllPunWordsSenseEmb,getPunWordEmb,readTask3Label
 
 from transformers import BertTokenizer,BertModel
 tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
@@ -14,7 +14,7 @@ import torch.nn as nn
 from tqdm import tqdm,trange
 from sklearn.model_selection import KFold # 引入交叉验证
 from visdom import Visdom # 可视化输出loss
-
+from subtask3.util import multilabel_crossentropy
 
 def main():
     parser = argparse.ArgumentParser()
@@ -56,6 +56,10 @@ def main():
                     type = int,
                     help="help to reduce loss") # 是否扩展样本训练
 
+    parser.add_argument("--dropout",
+                        default=0.5,
+                        type=float,
+                        help="drop out")
     parser.add_argument("--lr",default=1e-3,type=float,help="learning rate")
 
     args = parser.parse_args()
@@ -89,8 +93,11 @@ def main():
     labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"
     keyPath = "/home/lawson/program/punLocation/data/key.txt"
     dataPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml"    
-    label_dict = getTask3Label(keyPath,dataPath, labelPath,outPath=None)
+    #label_dict = getTask3Label(keyPath,dataPath, labelPath,outPath=None)
     
+    # 这个是直接从生成好的文件中读取label_dict。 special_1.txt 中的文件去掉了 (0,1)标签
+    # special_2.txt 中去掉了 (0,1) ,(0,2) 两种标签
+    label_dict = readTask3Label("/home/lawson/program/punLocation/data/special_2.txt")
     sensePath = '/home/lawson/program/punLocation/data/pun_word_sense_emb.txt'
     wordEmb = getAllPunWordsSenseEmb(sensePath) # 得到双关词的所有sense 的embedding
     tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
@@ -98,11 +105,14 @@ def main():
     # 这里将puns_dict 变成一个list的形式，all_iid 和 all_puns 是一一对应的，它们都是从 puns_dict 中抽取出来的
     # 然后将得到的这个数组，开始进行分割，执行交叉验证
     all_iid = []
-    all_puns = [] 
-    for item in puns_dict.items(): # 处理每一行
+    all_puns = []
+    for item in puns_dict.items(): # 处理每一行 & 判断是否在label_dict 中。 这么做是为了防止出现bug，如果是 通过readTask3Label 方法所以可能
         iid, pun = item
-        all_iid.append(iid)
-        all_puns.append(pun)
+        if iid in label_dict.keys():
+            all_iid.append(iid)
+            all_puns.append(pun)
+        else:
+            continue
     
     # 将所有参数写入到日志文件中
     logger.info(args)
@@ -124,7 +134,7 @@ def main():
         train_input_ids = []
         train_attention_mask = []
         train_token_type_ids = []         
-        # train_all_tokens = []
+        
         train_location = [] # 用于标记哪个单词是双关词
         train_labels = [] # 该双关语的一个标签
         train_total_label = [] # 该双关语的所有标签集合
@@ -139,8 +149,7 @@ def main():
             if len(cur_total_label)==0: # 这是那种pun word 和 在key.txt 中对不上的标签
                 continue
             location = (int(pun[-1])) # 最后这个位置是双关词的位置，转为int。 这个location 是从1 开始计数的
-            bp_word = pun[location-1] # 双关词备份
-            train_pun_words.append(bp_word)
+            bp_word = pun[location-1] # 双关词备份            
             mask = [] # cur attention_mask
             
             for word in pun[0:-1]:
@@ -175,7 +184,7 @@ def main():
             # 下面这几行代码就实现了：扩充训练数据集的效果 [虽然扩充后，虽然数据集变大了，但是感觉模型不易收敛]
             for label in cur_total_label:
                 temp = [0] * args.sense_num # 含义分类
-                if(label[0] < args.sense_num): # 防止这个label[0] 超出了
+                if(label[0] < args.sense_num): # 防止这个label[0] 超出了下标位置
                     temp[label[0]] = 1
                 if(label[1] < args.sense_num):
                     temp[label[1]] = 1
@@ -184,7 +193,8 @@ def main():
                 train_input_ids.append(inputs)
                 train_attention_mask.append(mask)
                 train_token_type_ids.append(token_type)                
-                train_total_label.append(cur_total_label)            
+                train_total_label.append(cur_total_label)
+                train_pun_words.append(bp_word)
                 if not args.expand_sample: # 如果不需要扩展样例，跳出for循环
                     break 
         # end-for : 处理完了所有的train data
@@ -195,6 +205,7 @@ def main():
         train_attention_mask = t.tensor(train_attention_mask).cuda() 
         train_location = t.tensor(train_location).cuda()
         train_labels = t.tensor(train_labels, dtype=t.float).cuda()   
+        #train_labels = t.tensor(train_labels, dtype=t.long).cuda()
 
         train_dataset = MyDataset(train_input_ids,
                             train_token_type_ids,
@@ -209,18 +220,26 @@ def main():
                                 shuffle=True
                                 )
                 
-        model = MyModel(args.sense_num)
+        model = MyModel(args.sense_num,dropout=args.dropout)
         model.to(device)
         
         # step2. 定义模型
         # 优化器要接收模型的参数
         optimizer = t.optim.Adam(model.parameters(),lr=args.lr)
         
+        logger.info("模型中需要更新的参数是：")
+        # for param in model.named_parameters():
+        #     print(param[0])
+        
         # 使用交叉熵计算损失，因为是多标签，所以使用这个损失函数
         # 同时给这个损失函数设置一个权重值 weight
         # args.loss_weight  => negative : positive = 28:2 = 14
         pos_weight = t.full([args.sense_num],args.loss_weight).cuda()        
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) 
+        #criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight) 
+        #criterion = multilabel_crossentropy()
+
+        # CrossEntropy 的参数类型： logtis 是float型， target 是long 型
+        #criterion = nn.CrossEntropyLoss()  # 使用CrossEntrop
         
         # step 3. ============================ start training =====================================    
         # 这里遍历train_loader 为何会无报错跳出？ => 因为train_loader 的长度为0
@@ -237,15 +256,17 @@ def main():
                 # 下面这个地方填-1 的原因是：可能有时候凑不齐一个batch_size
                 cur_emb = cur_emb.view(-1,args.sense_num,768)
                 cur_emb = cur_emb.cuda()
-                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)
-                loss = criterion(logits,cur_labels)  # logits size = [batch_size,sense_num]
+                logits = model(cur_input_ids, cur_token_type_ids, cur_attention_mask,cur_location,cur_emb)  
+                #logits = 10 * logits  # 简单的放缩一下
+                loss = multilabel_crossentropy(logits,cur_labels)  # logits size = [batch_size,sense_num]
                 all_loss += loss.item() # 累积总loss
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
                 #logger.info(f"pun words in this batch are:{pun_words}")
-
-            avg_loss = all_loss/args.batch_size
+            
+            #avg_loss = all_loss/args.batch_size # 每batch的平均loss
+            avg_loss = all_loss/len(train_dataloader) # 每条样本的平均loss
             # win参数代表唯一标识； update 指定了更新方式            
             viz.line([avg_loss], [epoch], win=win, update="append")
             logger.info(f"\nepoch = {epoch}, avg_loss = {avg_loss}\n")
@@ -255,7 +276,7 @@ def main():
         # 从交叉验证获取 eval 数据
         eval_iid = [all_iid[i] for i in eval_index]
         eval_puns = [all_puns[i] for i in eval_index]
-                
+
         eval_input_ids = []
         eval_attention_mask = []
         eval_token_type_ids = []                   
@@ -345,7 +366,7 @@ def main():
             res = sig(logits) # 进行sigmoid 处理
             res = t.topk(res,k=2,dim=1) # 取top k
             index = res[1] # 取index 部分
-            index.squeeze_()
+            #index.squeeze_() # 如果是 [[2,1]] 这样的tensor，那么最后就会导致出现问题
             all_pred.extend(index.tolist())   # 放到all_pred 中
             eval_pun_words.extend(cur_pun_words)
 

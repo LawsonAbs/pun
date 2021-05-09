@@ -60,7 +60,7 @@ def main():
                         default=0.5,
                         type=float,
                         help="drop out")
-    parser.add_argument("--lr",default=1e-3,type=float,help="learning rate")
+    parser.add_argument("--lr",default=2e-5,type=float,help="learning rate")
 
     args = parser.parse_args()
 
@@ -97,7 +97,7 @@ def main():
     
     # 这个是直接从生成好的文件中读取label_dict。 special_1.txt 中的文件去掉了 (0,1)标签
     # special_2.txt 中去掉了 (0,1) ,(0,2) 两种标签
-    label_dict = readTask3Label("/home/lawson/program/punLocation/data/special_2.txt")
+    label_dict = readTask3Label("/home/lawson/program/punLocation/data/subtask3_labels.txt")
     sensePath = '/home/lawson/program/punLocation/data/pun_word_sense_emb.txt'
     wordEmb = getAllPunWordsSenseEmb(sensePath) # 得到双关词的所有sense 的embedding
     tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
@@ -118,7 +118,7 @@ def main():
     logger.info(args)
 
     # 得到所有的数据之后，开始分割数据
-    kf = KFold(n_splits=args.splits_num) # 5折交叉 
+    kf = KFold(n_splits=args.splits_num)
     cv_index = 1 
     for train_index, eval_index in kf.split(all_puns):
         logger.info(f"开始第 cv={cv_index} 次交叉训练")
@@ -142,6 +142,7 @@ def main():
         for i in range(len(train_puns)): # 处理每一行
             iid = train_iid[i]
             pun = train_puns[i]
+            #pun = ['the', 'duke', 'and', 'the', 'count', 'had', 'a', 'fight', '.', 'the', 'duke', 'was', 'down', 'for', 'the', 'count', '.',]
             cur_total_label = label_dict[iid] # 找出当前这个双关语id对应的所有标签
             cur_location = [] # 因为要保证词被拆分完之后还能还原，所以这里用一个list 记录
             tokens = ['[CLS]'] # 当前这句话的第一个tokens
@@ -149,17 +150,23 @@ def main():
             if len(cur_total_label)==0: # 这是那种pun word 和 在key.txt 中对不上的标签
                 continue
             location = (int(pun[-1])) # 最后这个位置是双关词的位置，转为int。 这个location 是从1 开始计数的
-            bp_word = pun[location-1] # 双关词备份            
+            #location = 16
+            bp_word = pun[location-1] # 双关词备份   
+            #bp_word = 'count'
             mask = [] # cur attention_mask
             
+            raw_text_index = 1
             for word in pun[0:-1]:
                 temp = tokenizer.tokenize(word)
-                if word== bp_word: # 如果当前这个词就是双关词                    
-                    for i in range(len(temp)):
-                        cur_location.append(cur_index+i+1)
+                # 如果当前这个词就是双关词，那么就进入一个判断过程
+                # 这里使用location 作为判断条件而不是 bp_word ，是因为同个双关词可能会在句中多次出现
+                # 如：the duke and the count had a fight. the duke was down for the count
+                if raw_text_index == location: 
+                    for j in range(len(temp)):
+                        cur_location.append(cur_index+j+1)
                 cur_index = cur_index + len(temp)
                 tokens.extend(temp) # 放入到tokens 中
-            
+                raw_text_index += 1
             tokens.append("[SEP]") # 得到一个完整的tokens
             mask = [1] * (len(tokens))
             

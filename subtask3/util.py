@@ -1,6 +1,6 @@
 import torch as t
-
-
+# 这个好像是从苏剑林那里获取的一个多标签分类方法
+# 如果有的y_true 只有一个1，是因为只留了前n个definition，所以截断了
 def multilabel_crossentropy(y_pred,y_true):
     # 下面三行代码主要是为了找出pred中的正负样例
     y_pred = (1 - 2 * y_true) * y_pred

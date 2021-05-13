@@ -4,6 +4,22 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        {   
+            "env": {"CUDA_VISIBLE_DEVICES":"0"},
+            //"justMyCode": false
+            "name": "main_sense",
+            "type": "python",
+            "request": "launch",
+            "program": "./subtask3/main_sense.py",
+            "console": "integratedTerminal",
+            "args":["--batch_size","16",
+                    "--loss_weight","5",
+                    "--splits_num","10",
+                    "--lr","2e-5",
+                    "--train_epoch","50",
+                    "--expand_sample"
+                    ]            
+        },
         {
             "name": "location",
             "type": "python",
@@ -16,8 +32,8 @@
                 "--do_pron",
                 "--use_sense",
                 //"--use_random", // 使用随机数填充
-                "--file_suffix","1"],
-            "env": {"CUDA_VISIBLE_DEVICES":"1"}
+                "--file_suffix","4"],
+            "env": {"CUDA_VISIBLE_DEVICES":"0"}
         },
         {
             "name": "file_util",
@@ -86,11 +102,19 @@
             "console": "integratedTerminal"            
         },
         {
-            "name": "subtask3",
+            "name": "preprocess",
+            "type": "python",
+            "request": "launch",
+            "program": "./subtask3/preprocess.py",
+            "console": "integratedTerminal"            
+        },
+        {
+            "name": "sub3_util",
             "type": "python",
             "request": "launch",
             "program": "./subtask3/util.py",
             "console": "integratedTerminal"            
         }
+        
     ]
 }

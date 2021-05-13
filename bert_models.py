@@ -1194,8 +1194,9 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             in_size += self.sense_size        
         self.classifier = nn.Linear(in_size, num_labels) 
         
-        # 下面这个应该就是attention 中随机初始化的参数
-        self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, requires_grad=True)) # 给 pronunciation 做attention 的操作
+        # 给 pronunciation 做attention 的操作
+        # 下面这个应该就是attention 中随机初始化的参数，这个维度是怎么设置的？
+        self.att_vec = Parameter(torch.rand(pron_emb_size * 2, 1, requires_grad=True)) 
         self.attention_1 = Local_attention(self.hidden_size,self.hidden_size*2)
 
 
@@ -1203,7 +1204,7 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.linear_sense = Parameter(torch.rand(768 // 32, 1, requires_grad=True)) # 给sense 做attention的操作              
         # 对sense 做 attention 操作
         # 这里使用的是attention 维度与之前的不同
-        self.attention_2 = Local_attention(768,768//32) # 因为最后输出的
+        self.attention_2 = Local_attention(768,768//32) 
 
         self.length_s = max_seq_length
         self.length_p = max_prons_length
@@ -1217,7 +1218,7 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         
     
     def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,defi_emb=None):
-        # 估计作者是不想单搞个文件，所以这里就把这个模型类直接放到了当前这个文件中
+        
         # step1. 执行bert得到输出
         sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         # sequence_output: (batch_size, sequence_length, config.hidden_size)
@@ -1225,10 +1226,10 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
 
         # prons:[batch_size,max_seq_length,pron_seq_length,pro_emb_size]
         if prons is not None:
-            context = prons.view(-1, self.length_p, self.hidden_size)  # prons:[batch_size*max_seq_length,pron_seq_length,pro_emb_size]
+            pron_context = prons.view(-1, self.length_p, self.hidden_size)  # prons:[batch_size*max_seq_length,pron_seq_length,pro_emb_size]
             # 为什么变化维度？
             # 可以看到这里是用attention  得到最后的 pron embedding.  context size = [4096, 5, 16]
-            pron_output, attention_scores = self.attention_1(context,self.att_vec) # local attention mechanism
+            pron_output, attention_scores = self.attention_1(pron_context,self.att_vec) # local attention mechanism
             pron_output = pron_output.view(-1, self.length_s, self.hidden_size)
             # pron_output: (batch_size, sequence_length, self.hidden_size)
         

@@ -551,22 +551,18 @@ def main():
                 if not args.do_pron: prons_emb = None
 
                 with torch.no_grad(): # 不计算梯度
-                    # 这里判断的原因是是否返回计算出的attention 值
-                    if args.do_pron:
-                        logits,att = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
-                    else:
-                        logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
-                                        
+                    logits,att_pron,att_defi = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask,defi_emb = eval_defi_emb)
+                
                 logits = torch.argmax(F.log_softmax(logits,dim=2),dim=2)
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()
                 input_mask = input_mask.to('cpu').numpy()
                 for i,mask in enumerate(input_mask):
-                    temp_1 =  []
-                    temp_2 = []
+                    temp_1 =  [] # 作为临时的 true
+                    temp_2 = [] # 作为临时的 pred
                     for j,m in enumerate(mask): # 只要 mask 为1 的数据
-                        if j == 0:
-                            continue                        
+                        if j == 0: # 跳过CLS 标志
+                            continue
                         else:
                             # 并不需要pop操作，直接记录所有的tokens
                             # temp_1.pop()
@@ -579,6 +575,21 @@ def main():
                             temp_2.pop()
                             y_true.append(temp_1)
                             y_pred.append(temp_2)
+                            # 从pred 中找出p的标志位，同时去获取 att_defi 的值                            
+                            max_value_index = [i for i in range(len (temp_2)) if temp_2[i]=='P']
+                            
+                            if len(max_value_index) == 1: # 给出完美预测的sense score weight
+                                max_value_index = max_value_index[0] + 1 # 默认取第0位，因为之前有CLS向量，所以这里有个+1操作
+                            
+                                # 找出该位的attention值 
+                                # size = [defi_num]
+                                sense_aware = att_defi[i][max_value_index]  
+                                # 从sense_aware 中找出与其最相关的top-k个值
+                                ind_val_dict = {}
+                                for k in range(len(sense_aware)):
+                                    ind_val_dict[k] = sense_aware[k]
+                                re = sorted(ind_val_dict.items(),key=lambda x:x[1],reverse=True)
+                                print(re)
                             break
             
             # 是所有的eval data 完之后，才有这个操作，说明y_true是所有的batch 数据得到的结果

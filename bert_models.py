@@ -1217,13 +1217,13 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
         self.linear_seqence = nn.Linear(768,256)
         
     
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,defi_emb=None):
-        
+    def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None,defi_emb=None):        
         # step1. 执行bert得到输出
         sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
         # sequence_output: (batch_size, sequence_length, config.hidden_size)
         sequence_output = self.linear_seqence(sequence_output) # 将768 投影到 256维
-
+        attention_scores_pron = None
+        attention_scores_defi = None
         # prons:[batch_size,max_seq_length,pron_seq_length,pro_emb_size]
         if prons is not None:
             pron_context = prons.view(-1, self.length_p, self.hidden_size)  # prons:[batch_size*max_seq_length,pron_seq_length,pro_emb_size]
@@ -1233,7 +1233,7 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             pron_output = pron_output.view(-1, self.length_s, self.hidden_size)
             # pron_output: (batch_size, sequence_length, self.hidden_size)
         
-            attention_scores = attention_scores.view(-1, self.length_s, self.length_p)
+            attention_scores_pron = attention_scores.view(-1, self.length_s, self.length_p)
             
             # 将bert的输出和 训练得到的 pronunciation embedding 的attention 结果拼接在一起
             sequence_output = torch.cat((sequence_output,pron_output),2)
@@ -1244,7 +1244,8 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             defi_emb = defi_emb.cuda()
             defi_emb = defi_emb.view(-1,self.length_defi,768)
             # 使用attention 处理这个last_cls_emb
-            sense_output,attention_scores_2 = self.attention_2(defi_emb,self.linear_sense)
+            sense_output,attention_scores_defi = self.attention_2(defi_emb,self.linear_sense)
+            attention_scores_defi = attention_scores_defi.view(-1,self.length_s,self.length_defi)
             sense_output = sense_output.view(-1, self.length_s, self.sense_size)
             # 直接将sense的embedding 拼接到每个单词的embedding 后面
             sequence_output = torch.cat((sequence_output,sense_output),2)
@@ -1263,12 +1264,10 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             else:
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             return loss,logits
-        else:
-            if prons is not None:
-                return logits,attention_scores
-            else:
-                return logits
-
+        else: # 评测阶段，想知道各个权重情况，所以这里返回
+            return logits,attention_scores_pron,attention_scores_defi
+            # attention_scores_pron size = [train_batch_size,self.length_s,self.length_p]
+            # attention_scores_defi size = [eval_batch_size,self.length_s,self.length_defi]
 
 class BertForSequencePronsClassification(BertPreTrainedModel):
 

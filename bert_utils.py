@@ -138,7 +138,7 @@ class NerProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(
             # 使用继承父类的读取文件的方法
-            self._read_csv(os.path.join(data_dir, "train.txt")), "train")
+            self._read_csv(os.path.join(data_dir, "train_2000.txt")), "train")
     
     def get_dev_examples(self, data_dir):
         """See base class."""

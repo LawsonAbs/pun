@@ -268,7 +268,7 @@ def main():
     '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
-    sense_path = "./lawson/defi_emb_50.txt"
+    sense_path = "./data/defi_emb_50.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
     kf = KFold(n_splits=10) # 分割10份
@@ -301,7 +301,7 @@ def main():
                   num_labels=num_labels,
                   max_seq_length=args.max_seq_length,
                   max_prons_length=args.max_pron_length, 
-                  pron_emb_size=args.pron_emb_size,
+                  pron_emb_size=args.pron_emb_size, # 16
                   do_pron=args.do_pron,
                   use_sense = args.use_sense, # 是否使用sense
                   defi_num = args.defi_num)
@@ -613,75 +613,6 @@ def main():
                         }
         json.dump(model_config,open(os.path.join(args.output_dir,"model_config.json"),"w"))
         # load a trained model and config that you have fine-tuned
- 
-    model.to(device)
-
-    # 这个程序中其实是不需要 设置这个 do_eval 参数的，因为这里使用的是交叉验证，而没有专用的数据集来检查这个
-    if args.do_eval and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
-        # 这是读取 valid.txt 文件作为 eval 数据
-        eval_examples = processor.get_dev_examples(args.data_dir)
-        eval_features, prons_map = convert_examples_to_pron_features(
-            eval_examples, label_list, args.max_seq_length, args.max_pron_length, tokenizer, prons_map)
-        logger.info("***** Running evaluation *****") 
-        logger.info("  Num examples = %d", len(eval_examples))
-        logger.info("  Batch size = %d", args.eval_batch_size)
-        all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
-        all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
-        all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
-        all_label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
-        all_prons_ids = torch.tensor([f.prons_id for f in eval_features], dtype=torch.long)
-        all_prons_att_mask = torch.tensor([f.prons_att_mask for f in eval_features], dtype=torch.long)
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids, all_prons_ids, all_prons_att_mask)
-        
-        # Run prediction for full data
-        eval_sampler = SequentialSampler(eval_data)
-        eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
-        model.eval()
-        eval_loss, eval_accuracy = 0, 0
-        nb_eval_steps, nb_eval_examples = 0, 0
-        y_true = []
-        y_pred = []
-        label_map = {i : label for i, label in enumerate(label_list,1)}
-        for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating"):
-            prons_emb = prons_embedding(prons_ids).to(device)
-            input_ids = input_ids.to(device)
-            input_mask = input_mask.to(device)
-            segment_ids = segment_ids.to(device)
-            label_ids = label_ids.to(device)
-            prons_ids = prons_ids.to(device)
-            prons_att_mask = prons_att_mask.to(device)
-
-            with torch.no_grad():
-                if args.do_pron:
-                    logits, att = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask)
-                else:
-                    logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask)
-            
-            logits = torch.argmax(F.log_softmax(logits,dim=2),dim=2)
-            logits = logits.detach().cpu().numpy()
-            label_ids = label_ids.to('cpu').numpy()
-            input_mask = input_mask.to('cpu').numpy()
-            for i,mask in enumerate(input_mask):
-                temp_1 =  []
-                temp_2 = []
-                for j,m in enumerate(mask):
-                    if j == 0:
-                        continue
-                    if m and label_map[label_ids[i][j]] != "X":
-                        temp_1.append(label_map[label_ids[i][j]])
-                        temp_2.append(label_map[logits[i][j]])
-                    else:
-                        temp_1.pop()
-                        temp_2.pop()
-                        y_true.append(temp_1)
-                        y_pred.append(temp_2)
-                        break
-        report = classification_report(y_true, y_pred,digits=4)
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
-        with open(output_eval_file, "w") as writer:
-            logger.info("***** Eval results *****")
-            logger.info("\n%s", report)
-            writer.write(report)
         
 
 if __name__ == "__main__":

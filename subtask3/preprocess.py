@@ -277,6 +277,115 @@ def getTask3Label(keyPath,dataPath,labelPath,outPath=None):
 
 
 """
+得到每个双关词的label
+"""
+def getTask3_pun_word_label(keyPath,dataPath,labelPath,outPath=None):    
+    # step1. 先处理keyPath，生成一个排序文件
+    # 这里仅仅是 economy%1:04:00:: 作为key还是不行的，因为同一个key可能会出现在多个pun word 的释义下
+    # 所以需要使用 pun word + key 作为 字典中的一个key （例如，key 可以是 saving_economy%1:04:00::）
+    keyMap = {} # save_economy%1:04:00:: => 0
+    with open(keyPath,'r') as f:
+        line = f.readline()
+        cur_row = 0 # 表示当前行
+        while(line): 
+            if ('%' not in line): # 如果是pun word
+                line = line.strip()
+                word = line # pun word
+                cur_row = 0
+                line = f.readline()
+            else:
+                line = line.strip()
+                line = line.split(";")            
+                for key in line:
+                    keyMap[word+"_"+key] = cur_row
+                line = f.readline()
+                cur_row += 1
+    
+    # step2. 从 subtask3-homographic-test.xml 读取内容，然后形成一个字典 {hom_2_9:saving...}        
+    #接着打开xml文档读取双关句，成为一行文本
+    dom2 = dom.parse(dataPath)
+    root = dom2.documentElement    
+    texts = root.getElementsByTagName("text") # 得到所有的text
+    
+    pun_word_dict = {} # {hom_2_9 : saving} 这种数据
+    # 遍历找出每一个双关语
+    for text in texts:
+        id = text.getAttribute("id")  # 获取id，为了和后面的 subtask3_labels.txt 匹配
+        words = text.getElementsByTagName("word") #得到word        
+        for word in words:
+            a = word.firstChild.data
+            if word.getAttribute("senses") == '2': # 说明有两重含义
+                pun_word_dict[word.getAttribute("id")] = a
+    
+
+    # step3.读取labelPath文件，然后找出所有双关词，同双关句的id形成对应
+    # 例如： hom_2_9	save%2:40:02::	save%2:41:02:: 
+    # 生成的结果就应该是
+    pun2Label = {} # {hom_117 : [[1, 2], [3, 2], [2, 1], [2, 3]] ...}    
+    with open(labelPath,'r') as f:
+        line = f.readline()
+        while (line):
+            line = line.strip() # 去行末换行
+            line = line.split() # 空格分割  
+            temp = line[0] # 用以拼接temp
+            
+            pun_word = pun_word_dict[temp]
+
+            # 左右两种释义
+            left_sense = line[1] # grind%1:04:00::;grind%1:07:00::	
+            left_sense = left_sense.split(";")
+            right_sense = line[2]  # grind%1:04:01::
+            right_sense = right_sense.split(";")
+
+            # 存取左右两种位置，每次循环时重置
+            left_location = set()
+            right_location = set()
+            
+            for sense in left_sense:
+                sense = pun_word + "_" + sense
+                # 下面这种找不到key的共有269中情况
+                if sense not in keyMap.keys():
+                   # print(sense)  Todo: 待解决的问题
+                    pass
+                else:
+                    left_location.add(keyMap[sense])
+            for sense in right_sense:
+                sense = pun_word + "_" + sense
+                if sense not in keyMap.keys():
+                    # print(sense)  Todo: 待解决的问题
+                    pass
+                else:
+                    right_location.add(keyMap[sense])
+            
+            # 根据左右数据生成标签
+            # 标签中的值是set的值，而不是set 中值的下标
+            labels = []
+            for left in (left_location):
+                for right in (right_location):
+                    labels.append([left,right])
+                         
+            line = f.readline()
+            if pun_word not in pun2Label.keys():
+                pun2Label[pun_word] = []
+                pun2Label[pun_word].append(labels)
+            else:
+                pun2Label[pun_word].append(labels)
+    
+
+    # step 将标签数据写入到文件中
+    with open(outPath,'a') as f:
+        for item in pun2Label.items():
+            key,value = item
+            f.write(key+"\t")
+            for val in value:
+                f.write(str(val) +";")
+            f.write("\n")
+    return pun2Label
+    #{hom_117 : [[1, 2], [3, 2], [2, 1], [2, 3]] ...} 
+
+
+
+"""
 这个方法和上面这个方法很相似，但是下面这个方法是直接读取文件然后获取数据
 """
 def readTask3Label(labelPath):
@@ -370,7 +479,7 @@ if __name__ == "__main__":
     outPunPath = "/home/lawson/program/punLocation/data/subtask3_puns.txt"  
 
     labelPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold"    
-    outLabelPath = "/home/lawson/program/punLocation/data/subtask3_labels.txt"
+    outLabelPath = "/home/lawson/program/punLocation/data/subtask3_labels_pun_word.txt"
     keyPath = "/home/lawson/program/punLocation/data/key.txt"
     sensePath = "/home/lawson/program/punLocation/data/pun_word_sense_emb.txt"
     special_label = "/home/lawson/program/punLocation/data/special_2.txt"
@@ -379,7 +488,7 @@ if __name__ == "__main__":
     #     os.remove(outPunPath)
     #getAllPuns(dataPath,outPunPath) # 一共有1298条数双关语
     #punWords = getAllPunWords(dataPath)
-    #writeKeyAndSense(punWords,keyPath,sensePath)
-    #getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)
-    readTask3Label(special_label)
-
+    # writeKeyAndSense(punWords,keyPath,sensePath)
+    # getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)
+    getTask3_pun_word_label(keyPath,dataPath, labelPath,outPath=outLabelPath)
+    # readTask3Label(special_label)

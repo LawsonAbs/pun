@@ -138,7 +138,7 @@ class NerProcessor(DataProcessor):
         """See base class."""
         return self._create_examples(
             # 使用继承父类的读取文件的方法
-            self._read_csv(os.path.join(data_dir, "train_2000.txt")), "train")
+            self._read_csv(os.path.join(data_dir, "train.txt")), "train")
     
     def get_dev_examples(self, data_dir):
         """See base class."""
@@ -744,6 +744,31 @@ def writeToTxt(tokens,true_label,pred_label,path):
                 f.write(line)
             f.write("\n") # 一句话写完之后，使用换行分割
 
+
+
+"""
+根据key_number 和 cur_pun_word 得到单词的具体含义
+"""
+def get_word_key_id_2_map(keyPath):
+    key_id_2_map = {} # save_0 => economy%1:04:00::
+    with open(keyPath,'r') as f:
+        line = f.readline()
+        cur_row = 0 # 表示当前行
+        while(line): 
+            if ('%' not in line): # 如果是pun word
+                line = line.strip()
+                word = line # pun word
+                cur_row = 0
+                line = f.readline()
+            else:
+                line = line.strip()
+                line = line.split(";")            
+                for key in line:
+                    key_id_2_map[word+"_"+str(cur_row)] = key
+                    break 
+                line = f.readline()
+                cur_row += 1
+    return key_id_2_map
 
 if __name__ == "__main__":
     path = "./test.txt"

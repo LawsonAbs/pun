@@ -149,7 +149,6 @@ class BertConfig(object):
                  type_vocab_size=2,
                  initializer_range=0.02):
         """Constructs BertConfig.
-
         Args:
             vocab_size_or_config_json_file: Vocabulary size of `inputs_ids` in `BertModel`.
             hidden_size: Size of the encoder layers and the pooler layer.
@@ -525,7 +524,6 @@ class BertPreTrainedModel(nn.Module):
         """
         Instantiate a BertPreTrainedModel from a pre-trained model file or a pytorch state dict.
         Download and cache the pre-trained model file if needed.
-
         Params:
             pretrained_model_name_or_path: either:
                 - a str with the name of a pre-trained model to load selected in the list of:
@@ -645,10 +643,8 @@ class BertPreTrainedModel(nn.Module):
 
 class BertModel(BertPreTrainedModel):
     """BERT model ("Bidirectional Embedding Representations from a Transformer").
-
     Params:
         config: a BertConfig class instance with the configuration to build a new model
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -661,7 +657,6 @@ class BertModel(BertPreTrainedModel):
             input sequence length in the current batch. It's the mask that we typically use for attention when
             a batch has varying length sentences.
         `output_all_encoded_layers`: boolean which controls the content of the `encoded_layers` output as described below. Default: `True`.
-
     Outputs: Tuple of (encoded_layers, pooled_output)
         `encoded_layers`: controled by `output_all_encoded_layers` argument:
             - `output_all_encoded_layers=True`: outputs a list of the full sequences of encoded-hidden-states at the end
@@ -672,17 +667,14 @@ class BertModel(BertPreTrainedModel):
         `pooled_output`: a torch.FloatTensor of size [batch_size, hidden_size] which is the output of a
             classifier pretrained on top of the hidden state associated to the first character of the
             input (`CLS`) to train on the Next-Sentence task (see BERT's paper).
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = modeling.BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     model = modeling.BertModel(config=config)
     all_encoder_layers, pooled_output = model(input_ids, token_type_ids, input_mask)
     ```
@@ -731,10 +723,8 @@ class BertForPreTraining(BertPreTrainedModel):
     This module comprises the BERT model followed by the two pre-training heads:
         - the masked language modeling head, and
         - the next sentence classification head.
-
     Params:
         config: a BertConfig class instance with the configuration to build a new model.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -752,7 +742,6 @@ class BertForPreTraining(BertPreTrainedModel):
         `next_sentence_label`: optional next sentence classification loss: torch.LongTensor of shape [batch_size]
             with indices selected in [0, 1].
             0 => next sentence is the continuation, 1 => next sentence is a random sentence.
-
     Outputs:
         if `masked_lm_labels` and `next_sentence_label` are not `None`:
             Outputs the total_loss which is the sum of the masked language modeling loss and the next
@@ -761,17 +750,14 @@ class BertForPreTraining(BertPreTrainedModel):
             Outputs a tuple comprising
             - the masked language modeling logits of shape [batch_size, sequence_length, vocab_size], and
             - the next sentence classification logits of shape [batch_size, 2].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     model = BertForPreTraining(config)
     masked_lm_logits_scores, seq_relationship_logits = model(input_ids, token_type_ids, input_mask)
     ```
@@ -800,10 +786,8 @@ class BertForPreTraining(BertPreTrainedModel):
 class BertForMaskedLM(BertPreTrainedModel):
     """BERT model with the masked language modeling head.
     This module comprises the BERT model followed by the masked language modeling head.
-
     Params:
         config: a BertConfig class instance with the configuration to build a new model.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -818,23 +802,19 @@ class BertForMaskedLM(BertPreTrainedModel):
         `masked_lm_labels`: masked language modeling labels: torch.LongTensor of shape [batch_size, sequence_length]
             with indices selected in [-1, 0, ..., vocab_size]. All labels set to -1 are ignored (masked), the loss
             is only computed for the labels set in [0, ..., vocab_size]
-
     Outputs:
         if `masked_lm_labels` is  not `None`:
             Outputs the masked language modeling loss.
         if `masked_lm_labels` is `None`:
             Outputs the masked language modeling logits of shape [batch_size, sequence_length, vocab_size].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     model = BertForMaskedLM(config)
     masked_lm_logits_scores = model(input_ids, token_type_ids, input_mask)
     ```
@@ -861,10 +841,8 @@ class BertForMaskedLM(BertPreTrainedModel):
 class BertForNextSentencePrediction(BertPreTrainedModel):
     """BERT model with next sentence prediction head.
     This module comprises the BERT model followed by the next sentence classification head.
-
     Params:
         config: a BertConfig class instance with the configuration to build a new model.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -879,24 +857,20 @@ class BertForNextSentencePrediction(BertPreTrainedModel):
         `next_sentence_label`: next sentence classification loss: torch.LongTensor of shape [batch_size]
             with indices selected in [0, 1].
             0 => next sentence is the continuation, 1 => next sentence is a random sentence.
-
     Outputs:
         if `next_sentence_label` is not `None`:
             Outputs the total_loss which is the sum of the masked language modeling loss and the next
             sentence classification loss.
         if `next_sentence_label` is `None`:
             Outputs the next sentence classification logits of shape [batch_size, 2].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     model = BertForNextSentencePrediction(config)
     seq_relationship_logits = model(input_ids, token_type_ids, input_mask)
     ```
@@ -924,11 +898,9 @@ class BertForSequenceClassification(BertPreTrainedModel):
     """BERT model for classification.
     This module is composed of the BERT model with a linear layer on top of
     the pooled output.
-
     Params:
         `config`: a BertConfig class instance with the configuration to build a new model.
         `num_labels`: the number of classes for the classifier. Default = 2.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -942,25 +914,20 @@ class BertForSequenceClassification(BertPreTrainedModel):
             a batch has varying length sentences.
         `labels`: labels for the classification output: torch.LongTensor of shape [batch_size]
             with indices selected in [0, ..., num_labels].
-
     Outputs:
         if `labels` is not `None`:
             Outputs the CrossEntropy classification loss of the output with the labels.
         if `labels` is `None`:
             Outputs the classification logits of shape [batch_size, num_labels].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     num_labels = 2
-
     model = BertForSequenceClassification(config, num_labels)
     logits = model(input_ids, token_type_ids, input_mask)
     ```
@@ -990,11 +957,9 @@ class BertForMultipleChoice(BertPreTrainedModel):
     """BERT model for multiple choice tasks.
     This module is composed of the BERT model with a linear layer on top of
     the pooled output.
-
     Params:
         `config`: a BertConfig class instance with the configuration to build a new model.
         `num_choices`: the number of classes for the classifier. Default = 2.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, num_choices, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -1008,13 +973,11 @@ class BertForMultipleChoice(BertPreTrainedModel):
             a batch has varying length sentences.
         `labels`: labels for the classification output: torch.LongTensor of shape [batch_size]
             with indices selected in [0, ..., num_choices].
-
     Outputs:
         if `labels` is not `None`:
             Outputs the CrossEntropy classification loss of the output with the labels.
         if `labels` is `None`:
             Outputs the classification logits of shape [batch_size, num_labels].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
@@ -1023,9 +986,7 @@ class BertForMultipleChoice(BertPreTrainedModel):
     token_type_ids = torch.LongTensor([[[0, 0, 1], [0, 1, 0]],[[0, 1, 1], [0, 0, 1]]])
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     num_choices = 2
-
     model = BertForMultipleChoice(config, num_choices)
     logits = model(input_ids, token_type_ids, input_mask)
     ```
@@ -1059,11 +1020,9 @@ class BertForTokenClassification(BertPreTrainedModel):
     """BERT model for token-level classification.
     This module is composed of the BERT model with a linear layer on top of
     the full hidden state of the last layer.
-
     Params:
         `config`: a BertConfig class instance with the configuration to build a new model.
         `num_labels`: the number of classes for the classifier. Default = 2.
-
     Inputs:
         `input_ids`: a torch.LongTensor of shape [batch_size, sequence_length]
             with the word token indices in the vocabulary(see the tokens preprocessing logic in the scripts
@@ -1077,25 +1036,20 @@ class BertForTokenClassification(BertPreTrainedModel):
             a batch has varying length sentences.
         `labels`: labels for the classification output: torch.LongTensor of shape [batch_size, sequence_length]
             with indices selected in [0, ..., num_labels].
-
     Outputs:
         if `labels` is not `None`:
             Outputs the CrossEntropy classification loss of the output with the labels.
         if `labels` is `None`:
             Outputs the classification logits of shape [batch_size, sequence_length, num_labels].
-
     Example usage:
     ```python
     # Already been converted into WordPiece token ids
     input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])
     input_mask = torch.LongTensor([[1, 1, 1], [1, 1, 0]])
     token_type_ids = torch.LongTensor([[0, 0, 1], [0, 1, 0]])
-
     config = BertConfig(vocab_size_or_config_json_file=32000, hidden_size=768,
         num_hidden_layers=12, num_attention_heads=12, intermediate_size=3072)
-
     num_labels = 2
-
     model = BertForTokenClassification(config, num_labels)
     logits = model(input_ids, token_type_ids, input_mask)
     ```
@@ -1269,57 +1223,6 @@ class BertForTokenPronsClassification_v2(BertPreTrainedModel):
             # attention_scores_pron size = [train_batch_size,self.length_s,self.length_p]
             # attention_scores_defi size = [eval_batch_size,self.length_s,self.length_defi]
 
-class BertForSequencePronsClassification(BertPreTrainedModel):
-
-    def __init__(self, config, num_labels, max_seq_length, max_prons_length, pron_emb_size, do_pron):
-        super(BertForSequencePronsClassification_v1, self).__init__(config)
-        self.num_labels = num_labels
-        self.bert = BertModel(config)
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.attention = Attention(pron_emb_size)
-
-        if do_pron:
-            self.hidden_size = pron_emb_size + config.hidden_size 
-        else:
-            self.hidden_size = config.hidden_size
-
-        self.classifier = nn.Linear(config.hidden_size, num_labels) 
-        self.attention_2 = Attention(config.hidden_size)
- 
-        
-        self.length_s = max_seq_length
-        self.length_p = max_prons_length
-        self.emb_p = pron_emb_size
-        self.apply(self.init_bert_weights)
-
-    def forward(self, input_ids, token_type_ids=None, attention_mask=None, prons=None, prons_mask=None, labels=None):
-        
-        sequence_output, _ = self.bert(input_ids, token_type_ids, attention_mask, output_all_encoded_layers=False)
-        # sequence_output: (batch_size, sequence_length, config.hidden_size)
-
-        if prons is not None:
-            
-            context = prons.view(-1, self.length_p, self.emb_p)
-
-            pron_output, _ = self.attention(context, context) # self-attention mechanism
-            pron_output = pron_output.view(-1, self.length_s, self.length_p, self.emb_p)
-            pron_output = torch.sum(pron_output, 2)
-            sequence_output = torch.cat((sequence_output,pron_output),2)
-        
-        context = sequence_output
-        sequence_output, _ = self.attention_2(context, context)
-        sequence_output = torch.sum(sequence_output, 1)
-
-        sequence_output = self.dropout(sequence_output)
-        logits = self.classifier(sequence_output)
-
-
-        if labels is not None:
-            loss_fct = CrossEntropyLoss()
-            loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            return loss, logits
-        else:
-            return logits
 
 class BertForSequencePronsClassification_v2(BertPreTrainedModel):
 

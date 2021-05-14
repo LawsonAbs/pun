@@ -468,7 +468,8 @@ def main():
                             # defi_emb 的size 是 [batch_size,max_seq_length,defi_num,768]
                 
                     defi_emb = defi_emb.cuda()    
-                if not args.do_pron: prons_emb = None
+                if not args.do_pron: 
+                    prons_emb = None
 
                 # 开始执行 model 用于训练                
                 loss,logits = model(input_ids, segment_ids, input_mask, prons_emb, prons_att_mask, label_ids, defi_emb)
@@ -584,7 +585,7 @@ def main():
                             # 从pred 中找出p的标志位，同时去获取 att_defi 的值                            
                             max_value_index = [i for i in range(len (temp_2)) if temp_2[i]=='P']
                             
-                            if len(max_value_index) == 1: # 给出完美预测的sense score weight
+                            if args.use_sense and len(max_value_index) == 1: # 给出完美预测的sense score weight
                                 max_value_index = max_value_index[0] + 1 # 默认取第0位，因为之前有CLS向量，所以这里有个+1操作
                                 pred_pun_word = tokenizer.convert_ids_to_tokens([input_ids[i][max_value_index].item()])[0] # 得到预测的pun word
                                 # 找出该位的attention值 
@@ -595,7 +596,7 @@ def main():
                                 for k in range(len(sense_aware)):
                                     ind_val_dict[k] = sense_aware[k]
                                 re = list(sorted(ind_val_dict.items(),key=lambda x:x[1],reverse=True))
-                                top_k = 5 # 取前5个                                
+                                top_k = 5 # 取前5个
                                 logger.info(f"当前预测得到的双关词是:{pred_pun_word}")
                                 
                                 for m in range(top_k):

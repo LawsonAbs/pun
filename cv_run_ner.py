@@ -16,6 +16,7 @@ import torch.nn.functional as F
 from bert_models import BertForTokenPronsClassification_v2, BertConfig, WEIGHTS_NAME, CONFIG_NAME
 from file_utils import PYTORCH_PRETRAINED_BERT_CACHE
 
+
 from pytorch_pretrained_bert.optimization import BertAdam
 from pytorch_pretrained_bert.tokenization import BertTokenizer
 from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
@@ -438,7 +439,7 @@ def main():
         错误的原因是 logits[i][j] 会出现0，从而导致这种错误
         '''
         label_map = {i : label for i, label in enumerate(label_list,0)}
-
+        id_2_key_map = get_word_key_id_2_map(keyPath = "/home/lawson/program/punLocation/data/key.txt")
         # start cross-validation training
         logger.info("cv: {}".format(cv_index))
         for index in trange(int(args.num_train_epochs), desc="Train Epoch"):
@@ -557,7 +558,12 @@ def main():
                 logits = logits.detach().cpu().numpy()
                 label_ids = label_ids.to('cpu').numpy()
                 input_mask = input_mask.to('cpu').numpy()
+
                 for i,mask in enumerate(input_mask):
+                    tokens = tokenizer.convert_ids_to_tokens(input_ids[i].tolist())
+                    # 过滤掉[PAD] 和 [CLS]
+                    tokens = [i for i in tokens if i !='[PAD]' and i!='[CLS]']
+                    logger.info(f"当前文本信息是：{tokens}")
                     temp_1 =  [] # 作为临时的 true
                     temp_2 = [] # 作为临时的 pred
                     for j,m in enumerate(mask): # 只要 mask 为1 的数据
@@ -580,7 +586,7 @@ def main():
                             
                             if len(max_value_index) == 1: # 给出完美预测的sense score weight
                                 max_value_index = max_value_index[0] + 1 # 默认取第0位，因为之前有CLS向量，所以这里有个+1操作
-                            
+                                pred_pun_word = tokenizer.convert_ids_to_tokens([input_ids[i][max_value_index].item()])[0] # 得到预测的pun word
                                 # 找出该位的attention值 
                                 # size = [defi_num]
                                 sense_aware = att_defi[i][max_value_index]  
@@ -588,8 +594,17 @@ def main():
                                 ind_val_dict = {}
                                 for k in range(len(sense_aware)):
                                     ind_val_dict[k] = sense_aware[k]
-                                re = sorted(ind_val_dict.items(),key=lambda x:x[1],reverse=True)
-                                print(re)
+                                re = list(sorted(ind_val_dict.items(),key=lambda x:x[1],reverse=True))
+                                top_k = 5 # 取前5个                                
+                                logger.info(f"当前预测得到的双关词是:{pred_pun_word}")
+                                
+                                for m in range(top_k):
+                                    index , weight = re[m]
+                                    logger.info(f"index = {index}, weight = {weight},") # 同时打印出key 信息
+                                    cur_key = pred_pun_word + "_" + str(index)                                    
+                                    if cur_key in id_2_key_map.keys():
+                                        key_list = id_2_key_map[cur_key]
+                                        logger.info(key_list)
                             break
             
             # 是所有的eval data 完之后，才有这个操作，说明y_true是所有的batch 数据得到的结果
@@ -597,7 +612,7 @@ def main():
             logger.info("\n%s", report)
             f1_new = f1_score(y_true, y_pred)
            
-            if f1_new  > best_score: 
+            if f1_new  > best_score:
                 best_score = f1_new
                 # 这里的 score_file表示的是一个文件名
                 write_scores(score_file + 'true_'+str(cv_index), y_true) # 最后得到的文件类型是 pickle 

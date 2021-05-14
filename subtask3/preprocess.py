@@ -473,6 +473,7 @@ def getPunWordEmb(wordEmb,words,defi_num,use_random):
     # size [word_num * defi_num, defi_dim]  单词个数*含义数， 含义的维度
 
 
+
 if __name__ == "__main__":
     # =================================================================
     dataPath = "/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml"    
@@ -490,5 +491,7 @@ if __name__ == "__main__":
     #punWords = getAllPunWords(dataPath)
     # writeKeyAndSense(punWords,keyPath,sensePath)
     # getTask3Label(keyPath,dataPath, labelPath,outPath=outLabelPath)
-    getTask3_pun_word_label(keyPath,dataPath, labelPath,outPath=outLabelPath)
+    # getTask3_pun_word_label(keyPath,dataPath, labelPath,outPath=outLabelPath)
     # readTask3Label(special_label)
+    #id_2_map = get_word_key_id_2_map(keyPath)
+    #print(id_2_map)

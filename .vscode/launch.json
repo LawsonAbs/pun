@@ -28,7 +28,7 @@
             "console": "integratedTerminal",
             "env": {"CUDA_VISIBLE_DEVICES":"1"},
             "args": [
-                "--data_dir", "data/semeval2017/data_with_pronunciation/pl-hete/",
+                "--data_dir", "data/semeval2017/data_with_pronunciation/pl-homo/",
                 "--bert_model", "bert-base-cased",
                 "--task_name",    "ner",
                 "--output_dir",   "out",
@@ -41,7 +41,7 @@
                 "--do_pron",
                 "--use_sense",
                 //"--use_random", // 使用随机数填充
-                "--file_suffix","4"
+                "--file_suffix","20210513"  // 这个file_suffix 是什么作用?
             ]            
         },
         {

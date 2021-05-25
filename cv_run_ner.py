@@ -154,7 +154,7 @@ def main():
                              "Positive power of 2: static loss scaling value.\n")
     parser.add_argument('--server_ip', type=str, default='', help="Can be used for distant debugging.")
     parser.add_argument('--server_port', type=str, default='', help="Can be used for distant debugging.")
-    parser.add_argument('--file_suffix',type=int,default=0,
+    parser.add_argument('--file_suffix',type=str,default=0,
                         help="The suffix of file")
 
     parser.add_argument('--use_random',
@@ -183,7 +183,7 @@ def main():
     if args.do_pron:
         mark += "pron_"
 
-    score_file = "scores/"+ mark + str(args.file_suffix)+'/'
+    score_file = "scores/"+ mark + args.file_suffix+'/'
     if not os.path.isdir(score_file): os.mkdir(score_file)
     args.output_dir = score_file + args.output_dir
 
@@ -269,7 +269,7 @@ def main():
     '''
     all_examples = processor.get_train_examples(args.data_dir)
     all_examples = np.array(all_examples)
-    sense_path = "./data/defi_emb_50.txt"
+    sense_path = "./data/defi_emb_30.txt"
     wordEmb = getAllWordSenseEmb(sense_path) # 得到单词sense 的embedding
 
     kf = KFold(n_splits=10) # 分割10份
@@ -524,7 +524,7 @@ def main():
             for input_ids, input_mask, segment_ids, label_ids, prons_ids, prons_att_mask in tqdm(eval_dataloader, desc="Evaluating Iterator"):
                 prons_emb = prons_embedding(prons_ids).to(device)
                 input_ids = input_ids.to(device)
-                input_mask = input_mask.to(device) # ？
+                input_mask = input_mask.to(device) 
                 segment_ids = segment_ids.to(device)
                 label_ids = label_ids.to(device)
                 prons_ids = prons_ids.to(device)

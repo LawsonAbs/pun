@@ -3,32 +3,16 @@
     // Hover to view descriptions of existing attributes.
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
-    "configurations": [
-        {   
-            "env": {"CUDA_VISIBLE_DEVICES":"0"},
-            //"justMyCode": false
-            "name": "main_sense",
-            "type": "python",
-            "request": "launch",
-            "program": "./subtask3/main_sense.py",
-            "console": "integratedTerminal",
-            "args":["--batch_size","16",
-                    "--loss_weight","5",
-                    "--splits_num","10",
-                    "--lr","2e-5",
-                    "--train_epoch","50",
-                    "--expand_sample"
-                    ]            
-        },
+    "configurations": [        
         {
             "name": "location",
             "type": "python",
             "request": "launch",
             "program": "cv_run_ner.py",
             "console": "integratedTerminal",
-            "env": {"CUDA_VISIBLE_DEVICES":"1"},
+            "env": {"CUDA_VISIBLE_DEVICES":"0"},
             "args": [
-                "--data_dir", "data/semeval2017/data_with_pronunciation/pl-homo/",
+                "--data_dir", "data/semeval2017/data_with_pronunciation/pl-hete/",
                 "--bert_model", "bert-base-cased",
                 "--task_name",    "ner",
                 "--output_dir",   "out",
@@ -41,8 +25,45 @@
                 "--do_pron",
                 "--use_sense",
                 //"--use_random", // 使用随机数填充
-                "--file_suffix","20210513"  // 这个file_suffix 是什么作用?
+                "--file_suffix","20210522"  // 这个file_suffix 是什么作用? => 用于生成文件夹的后缀
             ]            
+        },
+        {   
+            "env": {"CUDA_VISIBLE_DEVICES":"0"},
+            //"justMyCode": false
+            "name": "main_sense_1",
+            "type": "python",
+            "request": "launch",
+            "program": "./subtask3/main_sense.py",
+            "console": "integratedTerminal",
+            "args":["--batch_size","16",
+                    "--loss_weight","5",
+                    "--splits_num","10",
+                    "--lr","2e-5",
+                    "--train_epoch","50",
+                    "--expand_sample"
+                    ]            
+        },
+        {   
+            "env": {"CUDA_VISIBLE_DEVICES":"0"},
+            //"justMyCode": false
+            "name": "main_sense_2",
+            "type": "python",
+            "request": "launch",
+            "program": "./subtask3_gloss/gloss.py",
+            "console": "integratedTerminal",
+            "args":[
+                    "--do_train",                    
+                    "--batch_size","16",
+                    // "--loss_weight","5",
+                    // "--splits_num","10",
+                    // "--lr","2e-5",
+                    "--train_epoch","50",
+                    "--eval_batch_size","10",
+                    "--max_length","100",
+                    "--seed","42"
+                    // "--expand_sample"s
+                    ]            
         },
         {
             "name": "file_util",
@@ -101,7 +122,10 @@
             "type": "python",
             "request": "launch",
             "program": "./lawson/generateSenseEmb.py",
-            "console": "integratedTerminal"            
+            "console": "integratedTerminal",
+            "args": [
+                "10"
+            ]
         },
         {
             "name": "getSense",

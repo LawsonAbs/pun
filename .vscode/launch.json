@@ -18,14 +18,15 @@
                 "--output_dir",   "out",
                 "--max_seq_length","55",
                 "--do_train",
-                "--num_train_epochs","10",
-                "--pron_emb_size",   "16",
+                "--num_train_epochs","10",                
                 "--train_batch_size", "32",
                 "--eval_batch_size", "5",
                 "--do_pron",
+                "--pron_emb_size", "16",
                 "--use_sense",
                 //"--use_random", // 使用随机数填充
                 "--file_suffix","20210522"  // 这个file_suffix 是什么作用? => 用于生成文件夹的后缀
+
             ]            
         },
         {   

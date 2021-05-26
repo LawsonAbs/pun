@@ -1,6 +1,9 @@
 '''
 使用pun + gloss 做二分类，然后找出最相思的两个答案
 '''
+import random
+from sklearn.model_selection import KFold
+import numpy as np
 import sys
 sys.path.append(r"/home/lawson/program/punLocation/") # 引入当前目录作为模块，否则下面两个模块无法导入
 from visdom import Visdom # 可视化输出loss
@@ -33,8 +36,17 @@ win = "train_loss_"
 parser = argparse.ArgumentParser()
 
 ## Required parameters
-parser.add_argument("--batch_size",
-                    default=None,
+parser.add_argument("--do_train",
+                    action='store_true'
+                    )
+
+parser.add_argument("--do_eval",
+                    action='store_true',                    
+                    help="evaluate")
+
+
+parser.add_argument("--train_batch_size",
+                    default=16,
                     type=int,
                     required=True,
                     help="batch_size")
@@ -46,7 +58,7 @@ parser.add_argument("--train_epoch",
 
 
 parser.add_argument("--eval_batch_size",
-                    default=1,
+                    default=16,
                     type=int,
                     required=True)                        
 
@@ -59,6 +71,11 @@ parser.add_argument("--max_length",
                     default=10,
                     type=int,
                     required=True)  
+
+def setup_seed(seed):
+    t.manual_seed(seed)    
+    np.random.seed(seed)
+    random.seed(seed)
 
 class MyModel(nn.Module):
     def __init__(self,in_fea,out_fea):
@@ -87,145 +104,134 @@ class MyDataset(Dataset):
     def __getitem__(self, index):
         return self.puns[index],self.labels[index]
 
+"""
+evaluate 数据集
+"""
+class EvalDataset(Dataset):
+    def __init__(self,eval_puns,eval_labels):
+        super(EvalDataset).__init__()
+        self.puns = eval_puns
+        self.labels = eval_labels
+        #self.keys = eval_keys
+    
+    def __len__(self):
+        return len(self.puns)
 
+    def __getitem__(self, index):
+        return self.puns[index],self.labels[index]#,self.keys[index]
 
 
 args = parser.parse_args()
 
+"""
+计算验证的效果
+"""
+def cal_metric(all_pred_keys,all_true_keys):
+    correct_num = 0
+    for pred,true in zip(all_pred_keys,all_true_keys):
+        true_left,true_right = true
+        if len(pred) < 2:
+            continue
+        pred_left,pred_right = pred
 
-def main():
+        if true_left in pred_left:
+            if true_right in pred_right:
+                correct_num += 1
+                continue
+        
+        elif true_left in pred_right:
+            if true_right in pred_left:
+                correct_num += 1                
+                
+    return correct_num / len(all_pred_keys)
+
+
+
+def train():
+    setup_seed(args.seed) 
     pun_words = getAllPunWords(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml")
     id_puns_map = getAllPuns(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml")
     pun2Label = readTask3Label_2(labelPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold")
-    puns = id_puns_map.values()
-    # 拼凑得到训练样本
-    train_pun = []
-    train_label = []
-    # step1.获取所有单词
-    for word,item,cur_pun in zip(pun_words,pun2Label,puns):
-        synsets = wn.synsets(word) # word这个单词所有的含义
-        cur_label_key = pun2Label[item]
-        cur_pun = " ".join(cur_pun[0:-1])
-        
-        for synset in synsets:
-            lemma_keys = []
-            temp = wn.synset(synset.name())
-            gloss = temp.definition()
-            lemmas = temp.lemmas()
-            for lemma in lemmas:
-                lemma_key = lemma.key()
-                lemma_keys.append(lemma_key)
-
-            # 使用flag 的原因是：无论正负，只添加一个样本
-            flag = False
-            for lable_key in cur_label_key:
-                if lable_key in lemma_keys:  
-                    flag = True
-        
-            if flag:
-                temp_text = cur_pun+" [SEP] "+gloss
-                train_pun.append(temp_text)
-                train_label.append(1)
-            else:
-                temp_text = cur_pun+" [SEP] "+gloss                                        
-                train_pun.append(temp_text)
-                train_label.append(0)
-                        
-
-    train_data_set = MyDataset(train_pun,train_label)
-    train_data_loader = DataLoader(train_data_set,
-    batch_size=args.batch_size,
-    shuffle=True  # 因为生成的数据都在一块，大都比较相似，所以需要shuffle 一下
-    ) #
-
-    model = MyModel(in_fea=768,out_fea=2) # 因为只是yes/no 分类，所以这里的输出维度就是2
-    model = model.cuda()
-    criterion = nn.CrossEntropyLoss()
-    optimizer = t.optim.Adam(model.parameters(),lr = 2e-5)
-    global_step = 0
-    loggert_step = 50    
-    for epoch in tqdm(range(args.train_epoch)):
-        logger_loss = 0
-        for batch in tqdm(train_data_loader):
-            x,labels = batch
-            labels = labels.cuda()
-            inputs = tokenizer(x,max_length=args.max_length,
-            padding='max_length',
-            return_tensors='pt',
-            truncation=True)
-            input_id = inputs['input_ids'].cuda()
-            attention_mask = inputs['attention_mask'].cuda()
-            token_type_ids = inputs['token_type_ids'].cuda()
-            
-            logits = model(input_id,attention_mask,token_type_ids)
-            loss = criterion(logits,labels)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            logger.info(f"loss={loss}")
-            if global_step % loggert_step == 0 and global_step:
-                viz.line([logger_loss], [global_step], win=win, update="append")
-                logger_loss = 0
-            global_step += 1
-            logger_loss += loss.item()
-        save_path = f"/home/lawson/program/punLocation/checkpoints/gloss_model_{epoch}.ckpt_1" 
-        t.save(model.state_dict,save_path)
-
-
-def evaluate():
-    pun_words = getAllPunWords(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml")
-    id_puns_map = getAllPuns(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml")
-    pun2Label = readTask3Label_2(labelPath="/home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.gold")
-    puns = id_puns_map.values()
-    # 拼凑得到验证集样本
-    eval_pun = []
-    eval_label = []
-    # step1.获取所有单词
-    for word,item,cur_pun in zip(pun_words,pun2Label,puns):
-        synsets = wn.synsets(word) # word这个单词所有的含义
-        cur_label_key = pun2Label[item]
-        cur_pun = " ".join(cur_pun[0:-1])
-        
-        for synset in synsets:
-            lemma_keys = []
-            temp = wn.synset(synset.name())
-            gloss = temp.definition()
-            lemmas = temp.lemmas()
-            for lemma in lemmas:
-                lemma_key = lemma.key()
-                lemma_keys.append(lemma_key)
-
-            # 使用flag 的原因是：无论正负，只添加一个样本
-            flag = False
-            for lable_key in cur_label_key:
-                if lable_key in lemma_keys:  
-                    flag = True
-        
-            if flag:
-                temp_text = cur_pun+" [SEP] "+gloss
-                eval_pun.append(temp_text)
-                eval_label.append(1)
-            else:
-                temp_text = cur_pun+" [SEP] "+gloss
-                eval_pun.append(temp_text)
-                eval_label.append(0)
-                        
-    eval_data_set = MyDataset(eval_pun,eval_label)
-    eval_data_loader = DataLoader(eval_data_set,
-                                  batch_size=args.batch_size,
-                                  shuffle=True  # 因为生成的数据都在一块，大都比较相似，所以需要shuffle 一下
-                                  )
-
-    model = MyModel(in_fea=768,out_fea=2) # 因为只是yes/no 分类，所以这里的输出维度就是2
-    model = model.cuda()
-    criterion = nn.CrossEntropyLoss()
+    # pun_words = getAllPunWords(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/test.xml")
+    # id_puns_map = getAllPuns(dataPath="/home/lawson/program/punLocation/data/puns/test/homo/test.xml")
+    # pun2Label = readTask3Label_2(labelPath="/home/lawson/program/punLocation/data/puns/test/homo/test.gold")
+    puns = list(id_puns_map.values())
+    puns = np.array(puns)  # 必须转为numpy，这样才可以使用后面cv中的选择操作
+    pun_words = np.array(pun_words)
+    puns_id_1 = list(id_puns_map.keys())
+    puns_id_2 = list(pun2Label.keys())
+    pun_labels = list(pun2Label.values())
+    pun_labels = np.array(pun_labels)
     
-    global_step = 0
-    loggert_step = 50
-    with t.no_grad():
-        for epoch in tqdm(range(args.eval_epoch)):
+    # 使用交叉验证
+    kf = KFold(n_splits=10) # 分割10份
+    kf.get_n_splits(puns)
+    cv_index = 0
+    for train_index,test_index in kf.split(puns):
+        cv_index += 1
+        raw_train_pun = puns[train_index]
+        raw_train_pun_words = pun_words[train_index]
+        raw_train_pun_labels = pun_labels[train_index]
+        
+        raw_eval_pun = puns[test_index]  
+        raw_eval_pun_words = pun_words[test_index]
+        raw_eval_pun_labels = pun_labels[test_index]
+
+        # 拼凑得到训练样本
+        train_pun = []
+        train_label = []        
+        train_key = [] # 保存每个key，用于解码时得到标签
+        # step1.获取所有单词
+        for word,item,cur_pun in zip(raw_train_pun_words,raw_train_pun_labels,raw_train_pun):
+            synsets = wn.synsets(word) # word这个单词所有的含义
+            cur_label_key = item
+            cur_pun = " ".join(cur_pun[0:-1])
+            
+            for synset in synsets:
+                lemma_keys = []
+                temp = wn.synset(synset.name())
+                gloss = temp.definition()
+                lemmas = temp.lemmas()                
+                
+                for lemma in lemmas:
+                    lemma_key = lemma.key()
+                    lemma_keys.append(lemma_key)            
+                train_key.append(lemma_keys) # 这里改变成np型的数组
+
+                # 使用flag 的原因是：无论正负，只添加一个样本
+                flag = False
+                for lable_key in cur_label_key:
+                    if lable_key in lemma_keys:  
+                        flag = True
+            
+                if flag:
+                    temp_text = cur_pun+" [SEP] "+gloss
+                    train_pun.append(temp_text)
+                    train_label.append(1)
+                else:
+                    temp_text = cur_pun+" [SEP] "+gloss                                        
+                    train_pun.append(temp_text)
+                    train_label.append(0)
+        train_pun = np.array(train_pun)
+        train_label = np.array(train_label)
+        train_key = np.array(train_key)
+        
+        
+        train_data_set = MyDataset(train_pun,train_label)
+        train_data_loader = DataLoader(train_data_set,
+                                       batch_size=args.train_batch_size,
+                                       shuffle=True  # 因为生成的数据都在一块，大都比较相似，所以需要shuffle 一下
+                                       )
+
+        model = MyModel(in_fea=768,out_fea=2) # 因为只是yes/no 分类，所以这里的输出维度就是2
+        model = model.cuda()
+        criterion = nn.CrossEntropyLoss()
+        optimizer = t.optim.Adam(model.parameters(),lr = 2e-5)
+        global_step = 0
+        loggert_step = 50
+        for epoch in tqdm(range(args.train_epoch)):
             logger_loss = 0
-            for batch in tqdm(eval_data_loader):
+            for batch in tqdm(train_data_loader):
                 x,labels = batch
                 labels = labels.cuda()
                 inputs = tokenizer(x,max_length=args.max_length,
@@ -237,13 +243,114 @@ def evaluate():
                 token_type_ids = inputs['token_type_ids'].cuda()
                 
                 logits = model(input_id,attention_mask,token_type_ids)
-                loss = criterion(logits,labels)                
+                loss = criterion(logits,labels)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
                 logger.info(f"loss={loss}")
                 if global_step % loggert_step == 0 and global_step:
                     viz.line([logger_loss], [global_step], win=win, update="append")
                     logger_loss = 0
-                global_step += 1                        
+                global_step += 1
+                logger_loss += loss.item()
+            save_path = f"/home/lawson/program/punLocation/checkpoints/gloss_model_{epoch}.ckpt_1" 
+            t.save(model.state_dict,save_path)
+
+            # evaluate            
+            logger.info("============= start evaluating =============\n")
+            # 评测时，需要逐条生成结果，所以就不用batch。拼凑得到训练样本            
+            # step1. 边生成，边预测
+            eval_true_key = [] # 拿到eval的真实key，然后和pred计算metric 值
+            all_pred_key = [] # 得到所有预测的key
+            max_f1 = 0
+            for word,cur_label_key,cur_pun in zip(raw_eval_pun_words,raw_eval_pun_labels,raw_eval_pun):
+                eval_pun = []
+                eval_label = []        
+                cur_eval_key = [] # 保存当前这个样本的key，用于解码时得到标签
+                
+                synsets = wn.synsets(word) # word这个单词所有的含义
+                eval_true_key.append(cur_label_key)
+                cur_pun = " ".join(cur_pun[0:-1])
+                
+                for synset in synsets:
+                    lemma_keys = []
+                    temp = wn.synset(synset.name())
+                    gloss = temp.definition()
+                    lemmas = temp.lemmas()                
+                    
+                    for lemma in lemmas:
+                        lemma_key = lemma.key()
+                        lemma_keys.append(lemma_key)            
+                    cur_eval_key.append(lemma_keys) # 这里改变成np型的数组
+
+                    # 使用flag 的原因是：无论正负，只添加一个样本
+                    flag = False
+                    for lable_key in cur_label_key:
+                        if lable_key in lemma_keys:  
+                            flag = True
+                
+                    if flag:
+                        temp_text = cur_pun+" [SEP] "+gloss
+                        eval_pun.append(temp_text)
+                        eval_label.append(1)
+                    else:
+                        temp_text = cur_pun+" [SEP] "+gloss                                        
+                        eval_pun.append(temp_text)
+                        eval_label.append(0)
+
+                with t.no_grad():                                                             
+                    inputs = tokenizer(eval_pun,
+                                    max_length=args.max_length,
+                                    padding='max_length',
+                                    return_tensors='pt',
+                                    truncation=True
+                                    )
+                    input_id = inputs['input_ids'].cuda()
+                    attention_mask = inputs['attention_mask'].cuda()
+                    token_type_ids = inputs['token_type_ids'].cuda()
+                    
+                    logits = model(input_id,attention_mask,token_type_ids)
+                    # size = [eval_batch_size,2]
+                    loss = criterion(logits,t.tensor(eval_label).cuda())
+                    logger.info(f"loss={loss}")
+
+                    # 先softmax一下，是为了更好的定阈值
+                    softmax = nn.Softmax(dim=-1)
+                    logits = softmax(logits)
+                    pred_label = logits[:,1] # 得到预测值为1的概率
+                    # threshold = 0.5                        
+                    # pred_label_index = [index for index in range(len(pred_label)) if pred_label[index] > threshold]
+                    # if len(pred_label_index)!=0:
+                    #     pred_key = eval_key[pred_label_index]
+                    #     temp = np.array(x) # 转换成numpy，方便做下面的切片操作
+                    #     raw_text = temp[pred_label_index]
+                    #     print(f"pred_key={pred_key},raw_text={raw_text}")
+                    cnt = 0
+                    pred_label_index_map = {}
+                    for pred in pred_label:
+                        pred_label_index_map[cnt] = pred
+                        cnt += 1
+                    pred_label = list(sorted(pred_label_index_map.items(),key=lambda x:x[1],reverse=True))
+                    temp = []
+                    # 只取top2 作为最后的释义
+                    for item in pred_label[0:2]:
+                        index,score = item
+                        pred_key = cur_eval_key[index]
+                        raw_text = eval_pun[index]
+                        temp.append(pred_key)
+                        logger.info(f"pred_key={pred_key},raw_text={raw_text}")
+                    logger.info("\n")
+                    all_pred_key.append(temp)
+            
+            f1 = cal_metric(all_pred_key,eval_true_key)
+            max_f1 = max(f1,max_f1)
+            logger.info(f"cv_index = {cv_index},epoch = {epoch},f1={f1}\n")
+
+        logger.info(f"max_f1 = {max_f1}\n")
+
 
 if __name__ == "__main__":
-    print("in main")
-    main()
+    
+    if args.do_train:
+        print("in train")
+        train()    

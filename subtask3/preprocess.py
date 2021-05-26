@@ -103,12 +103,12 @@ def writeKeyAndSense(punWords,keyPath,sensePath):
 
 """
 得到所有的 homo 双关语。 文件内容如下：
-1.outPath: 生成结果放在 subtask3_puns.txt
+#1.outPath: 生成结果放在 subtask3_puns.txt
 2.dataPath : /home/lawson/program/punLocation/data/puns/test/homo/subtask3-homographic-test.xml
 标签 subtask3_labels.txt
 上面两个文件的每行一一对应。其中 subtask3_labels.txt 是结合 ../data/key.txt 下的文件内容生成的
 """
-def getAllPuns(dataPath,outPath):
+def getAllPuns(dataPath):
     puns = [] # 表示所有的双关词
     
     # step2.接着打开xml文档读取双关句，成为一行文本
@@ -406,8 +406,31 @@ def readTask3Label(labelPath):
             temp=list(map(lambda x:eval(x),labels))
             pun2Label[id] = temp
             line = f.readline()
-    #print(pun2Label)
+    
     return pun2Label
+
+
+"""
+这个方法和上面这个方法很相似，但是下面这个方法是直接读取文件然后获取数据
+"""
+def readTask3Label_2(labelPath):
+    pun2Label = {}
+    with open(labelPath,'r') as f:
+        line = f.readline()
+        while(line):
+            line = line.strip()
+            line = line.replace(" ","")
+            line = line.split() # 分割
+            
+            id = line[0] # 得到id
+            if len(line) < 2:
+                line = f.readline()
+                continue
+            labels = line[1::] # 得到标签
+            pun2Label[id] = labels
+            line = f.readline()    
+    return pun2Label
+
 
 """
 功能：获取所有 双关词的sense embedding

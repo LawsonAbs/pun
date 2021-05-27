@@ -32,7 +32,7 @@ logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(messa
                     filemode='w', # 写模式
                     )
 viz = Visdom()
-win = "train_loss_"
+
 parser = argparse.ArgumentParser()
 
 ## Required parameters
@@ -162,12 +162,14 @@ def train():
     puns_id_2 = list(pun2Label.keys())
     pun_labels = list(pun2Label.values())
     pun_labels = np.array(pun_labels)
-    
+    pos_list = ['a','r', 'n','v'] # adj ,adv ,n ,verb
+    pos_name = ['adjective','adverb','noun','verb']
     # 使用交叉验证
     kf = KFold(n_splits=10) # 分割10份
     kf.get_n_splits(puns)
-    cv_index = 0
+    cv_index = 1
     for train_index,test_index in kf.split(puns):
+        win = f"train_loss_{cv_index}"
         cv_index += 1
         raw_train_pun = puns[train_index]
         raw_train_pun_words = pun_words[train_index]
@@ -182,36 +184,37 @@ def train():
         train_label = []        
         train_key = [] # 保存每个key，用于解码时得到标签
         # step1.获取所有单词
-        for word,item,cur_pun in zip(raw_train_pun_words,raw_train_pun_labels,raw_train_pun):
-            synsets = wn.synsets(word) # word这个单词所有的含义
-            cur_label_key = item
+        for word,cur_label_key,cur_pun in zip(raw_train_pun_words,raw_train_pun_labels,raw_train_pun):
             cur_pun = " ".join(cur_pun[0:-1])
-            
-            for synset in synsets:
-                lemma_keys = []
-                temp = wn.synset(synset.name())
-                gloss = temp.definition()
-                lemmas = temp.lemmas()                
-                
-                for lemma in lemmas:
-                    lemma_key = lemma.key()
-                    lemma_keys.append(lemma_key)            
-                train_key.append(lemma_keys) # 这里改变成np型的数组
+            for pos,name in zip(pos_list,pos_name):
+                synsets = wn.synsets(word,pos=pos) # 按pos分别找出 word这个单词所有的含义                            
+                for synset in synsets:
+                    lemma_keys = []
+                    temp = wn.synset(synset.name())
+                    gloss = temp.definition()
+                    lemmas = temp.lemmas()                
+                    
+                    for lemma in lemmas:
+                        lemma_key = lemma.key()
+                        lemma_keys.append(lemma_key)            
+                    train_key.append(lemma_keys) 
 
-                # 使用flag 的原因是：无论正负，只添加一个样本
-                flag = False
-                for lable_key in cur_label_key:
-                    if lable_key in lemma_keys:  
-                        flag = True
-            
-                if flag:
-                    temp_text = cur_pun+" [SEP] "+gloss
-                    train_pun.append(temp_text)
-                    train_label.append(1)
-                else:
-                    temp_text = cur_pun+" [SEP] "+gloss                                        
-                    train_pun.append(temp_text)
-                    train_label.append(0)
+                    # 使用flag 的原因是：无论正负，只添加一个样本
+                    flag = False
+                    for lable_key in cur_label_key:
+                        if lable_key in lemma_keys:  
+                            flag = True
+                
+                    if flag:
+                        temp_text = cur_pun+" [SEP] "+name+" [SEP] "+gloss
+                        # temp_text = cur_pun+" [SEP] " + gloss
+                        train_pun.append(temp_text)
+                        train_label.append(1)
+                    else:
+                        temp_text = cur_pun+" [SEP] "+name+" [SEP] "+gloss
+                        # temp_text = cur_pun+" [SEP] " + gloss
+                        train_pun.append(temp_text)
+                        train_label.append(0)
         train_pun = np.array(train_pun)
         train_label = np.array(train_label)
         train_key = np.array(train_key)
@@ -228,7 +231,8 @@ def train():
         criterion = nn.CrossEntropyLoss()
         optimizer = t.optim.Adam(model.parameters(),lr = 2e-5)
         global_step = 0
-        loggert_step = 50
+        loggert_step = 50        
+        max_f1 = 0
         for epoch in tqdm(range(args.train_epoch)):
             logger_loss = 0
             for batch in tqdm(train_data_loader):
@@ -256,48 +260,49 @@ def train():
             save_path = f"/home/lawson/program/punLocation/checkpoints/gloss_model_{epoch}.ckpt_1" 
             t.save(model.state_dict,save_path)
 
-            # evaluate            
+            # ============================================ evaluate ============================================
             logger.info("============= start evaluating =============\n")
             # 评测时，需要逐条生成结果，所以就不用batch。拼凑得到训练样本            
             # step1. 边生成，边预测
             eval_true_key = [] # 拿到eval的真实key，然后和pred计算metric 值
-            all_pred_key = [] # 得到所有预测的key
-            max_f1 = 0
+            all_pred_key = [] # 得到所有预测的key            
             for word,cur_label_key,cur_pun in zip(raw_eval_pun_words,raw_eval_pun_labels,raw_eval_pun):
                 eval_pun = []
-                eval_label = []        
+                eval_label = []
                 cur_eval_key = [] # 保存当前这个样本的key，用于解码时得到标签
-                
-                synsets = wn.synsets(word) # word这个单词所有的含义
-                eval_true_key.append(cur_label_key)
                 cur_pun = " ".join(cur_pun[0:-1])
-                
-                for synset in synsets:
-                    lemma_keys = []
-                    temp = wn.synset(synset.name())
-                    gloss = temp.definition()
-                    lemmas = temp.lemmas()                
+                eval_true_key.append(cur_label_key)
+                for pos,name in zip(pos_list,pos_name):
+                    synsets = wn.synsets(word,pos=pos) # 分词性类别（pos）的找出word这个单词所有的含义                    
+                    for synset in synsets:
+                        lemma_keys = []
+                        temp = wn.synset(synset.name())
+                        gloss = temp.definition()
+                        lemmas = temp.lemmas()                
+                        
+                        for lemma in lemmas:
+                            lemma_key = lemma.key()
+                            lemma_keys.append(lemma_key)            
+                        cur_eval_key.append(lemma_keys) # 这里改变成np型的数组
+
+                        # 使用flag 的原因是：无论正负，只添加一个样本
+                        flag = False
+                        for lable_key in cur_label_key:
+                            if lable_key in lemma_keys:  
+                                flag = True
                     
-                    for lemma in lemmas:
-                        lemma_key = lemma.key()
-                        lemma_keys.append(lemma_key)            
-                    cur_eval_key.append(lemma_keys) # 这里改变成np型的数组
-
-                    # 使用flag 的原因是：无论正负，只添加一个样本
-                    flag = False
-                    for lable_key in cur_label_key:
-                        if lable_key in lemma_keys:  
-                            flag = True
-                
-                    if flag:
-                        temp_text = cur_pun+" [SEP] "+gloss
-                        eval_pun.append(temp_text)
-                        eval_label.append(1)
-                    else:
-                        temp_text = cur_pun+" [SEP] "+gloss                                        
-                        eval_pun.append(temp_text)
-                        eval_label.append(0)
-
+                        if flag:
+                            temp_text = cur_pun+" [SEP] " + name + " [SEP] " + gloss
+                            # temp_text = cur_pun+" [SEP] " + gloss
+                            eval_pun.append(temp_text)
+                            eval_label.append(1)
+                        else:
+                            temp_text = cur_pun+" [SEP] " + name + " [SEP] " + gloss
+                            # temp_text = cur_pun+" [SEP] " + gloss
+                            eval_pun.append(temp_text)
+                            eval_label.append(0)                        
+                if len(eval_pun) == 0:
+                    continue
                 with t.no_grad():                                                             
                     inputs = tokenizer(eval_pun,
                                     max_length=args.max_length,

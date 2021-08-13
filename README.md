@@ -13,22 +13,6 @@ Computer Science Department, University of California, Los Angeles
 - `python3`
 - `pip3 install -r requirements.txt`
 
-## Training for Pun Detection
-
-```Bash
-python cv_run_sc.py 
---data_dir data/semeval2017/data_with_pronunciation/pd-hete/ 
---bert_model bert-base-cased 
---task_name sc 
---output_dir out 
---max_seq_length 128 
---do_train 
---num_train_epochs 3 
---do_eval 
---pron_emb_size 16 
---do_pron 
-```
-
 ## Training for Pun Location
 
 ```Bash

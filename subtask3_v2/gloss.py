@@ -1,5 +1,5 @@
 '''
-使用pun + gloss 做二分类，然后找出最相思的两个答案
+使用pun + gloss 做二分类，然后找出最相似的两个答案
 '''
 import random
 from sklearn.model_selection import KFold

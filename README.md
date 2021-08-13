@@ -37,7 +37,9 @@ python cv_run_ner.py
 shot	8 
 就代表shot 这个单词，在训练集中有8个意思涉及到了双关意义
 
-3. `pun_word_definition.txt` 是用于将每个双关词的各种含义使用bert处理得到的embedding 
-4. `./lawson/getSense.py`  是用于生成 pun_word_definition.txt 的功能文件
-5. `defi_emb_xxx.txt` 是用于存储各个单词在 wordnet 中的不同含义
-6. `./lawson/generateSenseEmb.py` 是用于生成defi_emb_xxx.txt 文件
+3. `tools` 文件夹下是工具文件
+- `./tools/getSense.py`  用于生成 /home/lawson/program/punLocation/data/pun_word_definition.txt 的文件
+- `./tools/generateSenseEmb.py` 是用于生成defi_emb_xxx.txt 文件
+4. `defi_emb_xxx.txt` 是用于存储各个单词在 wordnet 中的不同含义
+5. `pun_word_definition.txt` 是用于将每个双关词的各种含义使用bert处理得到的embedding 
+6. `subtask3_v2` 是用pun+gloss 对的方式解决pun interpretation 的问题

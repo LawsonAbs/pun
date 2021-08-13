@@ -2,7 +2,7 @@
 Author: LawsonAbs
 Date: 2021-01-20 21:50:27
 LastEditTime: 2021-01-21 09:15:25
-FilePath: /punLocation/lawson/sense.py
+FilePath: /punLocation/tools/sense.py
 '''
 
 '''

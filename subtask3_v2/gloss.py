@@ -7,10 +7,10 @@ import numpy as np
 import sys
 sys.path.append(r"/home/lawson/program/punLocation/") # 引入当前目录作为模块，否则下面两个模块无法导入
 from visdom import Visdom # 可视化输出loss
-from subtask3 import attention
+from subtask3_v1 import attention
 from nltk.corpus import wordnet as wn
 import random
-from subtask3.preprocess import *
+from subtask3_v1.preprocess import *
 import  xml.dom.minidom as dom
 import logging
 from tqdm import tqdm

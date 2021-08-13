@@ -2,7 +2,7 @@
 Author: LawsonAbs
 Date: 2021-01-21 09:15:36
 LastEditTime: 2021-01-22 10:39:34
-FilePath: /punLocation/lawson/pureBert.py
+FilePath: /punLocation/tools/pureBert.py
 '''
 # 纯bert，实现一个 序列标注 任务
 import torch.nn as nn

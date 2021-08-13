@@ -112,7 +112,7 @@ if __name__ == "__main__":
     # subtask3-homographic-test.gold
     pathLabel = "/home/lawson/program/data/puns/test/homo/subtask3-homographic-test.gold"
     #pathLabel = "/home/lawson/program/data/puns/test/homo/test.txt"
-    outPath = "./pun_word_definition.txt"
+    outPath = "/home/lawson/program/punLocation/data/pun_word_definition.txt"
     allLabel = simpleReadXml(pathLabel)
     # 内容如下： {'save%2:40:02::', 'save%2:41:02::',....}
     print(len(allLabel)) # 总共有2596个含义（可能相同）。这里的含义

@@ -140,7 +140,7 @@ if __name__ == "__main__":
     print(len(word2Sense))
     print(len(not_found)) # 有192个单词的释义在nltk 中找不到对应的解释
 
-    with open("./word2Sense.txt",'w') as f:    
+    with open("./statistics/word2Sense.txt",'w') as f:    
         for item in word2Sense.items():
             word, sense_list = item
             row = word +"\t"+ str(len(sense_list))+"\n"

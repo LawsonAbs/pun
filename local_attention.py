@@ -22,7 +22,7 @@ class Local_attention(nn.Module):
         self.softmax = nn.Softmax(dim=1)
         self.tanh = nn.Tanh()
 
-    # 这里先对数据进行mask操作
+    # 这里先对数据进行mask操作，再返回一个Softmax 值
     def masked_softmax(self, T):
         T[T==0] = -10^20
         return self.softmax(T)
@@ -32,7 +32,7 @@ class Local_attention(nn.Module):
         Args:
             context (:class:`torch.FloatTensor` [batch size, query length, dimensions]): Data
                 overwhich to apply the attention mechanism.  会被应用 attention 方法 的数据
-                其实这个context  就是整个发音的数据
+                在发音模块中，这个context  就是整个发音的数据；在sense模块中，这个context 就是所有的sense定义数据
         Returns:
             :class:`tuple` with `output` and `weights`:
             * **output** (:class:`torch.LongTensor` [batch size, output length, dimensions]):
@@ -42,13 +42,13 @@ class Local_attention(nn.Module):
         """
         batch_size, pron_len, dimensions = context.size() # [4096, 5, 16]
         context = context.view(batch_size * pron_len, dimensions) # [20480,16]
-        context = self.linear_in(context) 
+        context = self.linear_in(context)
         context = context.view(batch_size, pron_len, self.dim_out) # [4096,5,32]
         
         # 计算 attention score => 然后使用softmax 得到各个部分的权重
         attention_scores = context.matmul(att_vec) # [4096, 5, 1]
         attention_weights = self.masked_softmax(attention_scores)
-        # batch mm() 
+        # batch mm()
         mix = torch.bmm(attention_weights.transpose(1,2).contiguous(), context)
         mix = mix.view(batch_size, self.dim_out) # [4096,32]
         attention_weights = attention_weights.view(batch_size, pron_len) # [4096,5]

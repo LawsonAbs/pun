@@ -167,10 +167,9 @@ def train():
     # 使用交叉验证
     kf = KFold(n_splits=10) # 分割10份
     kf.get_n_splits(puns)
-    cv_index = 1
+    cv_index = 0
     for train_index,test_index in kf.split(puns):
         win = f"train_loss_{cv_index}"
-        cv_index += 1
         raw_train_pun = puns[train_index]
         raw_train_pun_words = pun_words[train_index]
         raw_train_pun_labels = pun_labels[train_index]
@@ -206,12 +205,12 @@ def train():
                             flag = True
                 
                     if flag:
-                        temp_text = cur_pun+" [SEP] "+name+" [SEP] "+gloss
+                        temp_text = cur_pun+" [SEP] "+name+" : "+gloss
                         # temp_text = cur_pun+" [SEP] " + gloss
                         train_pun.append(temp_text)
                         train_label.append(1)
                     else:
-                        temp_text = cur_pun+" [SEP] "+name+" [SEP] "+gloss
+                        temp_text = cur_pun+" [SEP] "+name+" : "+gloss
                         # temp_text = cur_pun+" [SEP] " + gloss
                         train_pun.append(temp_text)
                         train_label.append(0)
@@ -251,7 +250,7 @@ def train():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
-                logger.info(f"loss={loss}")
+                # logger.info(f"loss={loss}")
                 if global_step % loggert_step == 0 and global_step:
                     viz.line([logger_loss], [global_step], win=win, update="append")
                     logger_loss = 0
@@ -292,12 +291,12 @@ def train():
                                 flag = True
                     
                         if flag:
-                            temp_text = cur_pun+" [SEP] " + name + " [SEP] " + gloss
+                            temp_text = cur_pun+" [SEP] " + name + " : " + gloss
                             # temp_text = cur_pun+" [SEP] " + gloss
                             eval_pun.append(temp_text)
                             eval_label.append(1)
                         else:
-                            temp_text = cur_pun+" [SEP] " + name + " [SEP] " + gloss
+                            temp_text = cur_pun+" [SEP] " + name + " : " + gloss
                             # temp_text = cur_pun+" [SEP] " + gloss
                             eval_pun.append(temp_text)
                             eval_label.append(0)                        
@@ -317,7 +316,7 @@ def train():
                     logits = model(input_id,attention_mask,token_type_ids)
                     # size = [eval_batch_size,2]
                     loss = criterion(logits,t.tensor(eval_label).cuda())
-                    logger.info(f"loss={loss}")
+                    # logger.info(f"loss={loss}")
 
                     # 先softmax一下，是为了更好的定阈值
                     softmax = nn.Softmax(dim=-1)
@@ -338,12 +337,15 @@ def train():
                     pred_label = list(sorted(pred_label_index_map.items(),key=lambda x:x[1],reverse=True))
                     temp = []
                     # 只取top2 作为最后的释义
-                    for item in pred_label[0:2]:
+                    cnt = 0
+                    for item in pred_label[0::]:
                         index,score = item
                         pred_key = cur_eval_key[index]
                         raw_text = eval_pun[index]
-                        temp.append(pred_key)
-                        logger.info(f"pred_key={pred_key},raw_text={raw_text}")
+                        if cnt< 2:
+                            temp.append(pred_key)
+                        logger.info(f"score = {score}, pred_key={pred_key},raw_text={raw_text}")
+                        cnt+=1
                     logger.info("\n")
                     all_pred_key.append(temp)
             
@@ -352,7 +354,7 @@ def train():
             logger.info(f"cv_index = {cv_index},epoch = {epoch},f1={f1}\n")
 
         logger.info(f"max_f1 = {max_f1}\n")
-
+        cv_index += 1
 
 if __name__ == "__main__":
     

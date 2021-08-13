@@ -4,6 +4,8 @@
 02.这里的唯一变量就是：defi_num， 即需要为每个单词生成多少个 embedding？
 """
 import sys
+import torch as t
+
 
 '''简单的方式读取文件
 '''
@@ -68,6 +70,7 @@ if __name__ == "__main__":
     from transformers import BertModel,BertTokenizer
     tokenizer = BertTokenizer.from_pretrained("/home/lawson/pretrain/bert-base-cased")
     model = BertModel.from_pretrained("/home/lawson/pretrain/bert-base-cased")
+    model = model.cuda()
     word_gross_num = {} # 每个单词的含义数
     max_gross = 0 # 每个单词最大的含义数
 
@@ -107,7 +110,13 @@ if __name__ == "__main__":
                         truncation=True,
                         max_length=40,
                         return_tensors='pt')
-            out = model(**inputs)
+            input_ids = inputs['input_ids'].cuda()
+            token_type_ids = inputs['token_type_ids'].cuda()
+            attention_mask = inputs['attention_mask'].cuda()
+            # for item in inputs.items():
+            #     key,value= item
+            #     value = value.cuda()
+            out = model(input_ids,token_type_ids,attention_mask)
             last_layer = out.last_hidden_state 
             cls_emb = last_layer[:,0,:] # 只取 CLS 上的值
 

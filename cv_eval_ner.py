@@ -10,7 +10,7 @@ from seqeval.metrics import classification_report, f1_score
 
 def main(argv):
     file_dir = argv[1]
-    print(file_dir)
+    #print(file_dir)
     cv = int(argv[2])
     preds,truths = [], []
     for i in range(cv):
@@ -29,5 +29,5 @@ if __name__ == "__main__":
     所以 python cv_eval_ner.py ./scores/homo-/ 10  就有三个参数，自左至右分别是argv[0] ~ argv[2]
     python cv_eval_ner.py ./scores/hete-/ 10 
     '''
-    print(len(sys.argv)) 
+    #print(len(sys.argv)) 
     print(main(sys.argv))

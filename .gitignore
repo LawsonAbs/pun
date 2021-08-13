@@ -1,3 +1,15 @@
+scores/*
+subtask3_v1/*
+
+data/defi_emb_10.txt
+data/defi_emb_15.txt
+data/defi_emb_20.txt
+data/defi_emb_25.txt
+data/defi_emb_30.txt
+data/defi_emb_35.txt
+data/defi_emb_40.txt
+data/defi_emb_5.txt
+data/defi_emb_50.txt
 # backup file
 ./lawson_bp/*
 # Byte-compiled / optimized / DLL files
@@ -71,24 +83,8 @@ target/
 # IPython Notebook
 .ipynb_checkpoints
 
-# pyenv
-.python-version
-
 # celery beat schedule file
 celerybeat-schedule
-
-# dotenv
-.env
-
-# virtualenv
-venv/
-ENV/
-
-# Spyder project settings
-.spyderproject
-
-# Rope project settings
-.ropeproject
 
 # Tensorboard logs
 logdir/
